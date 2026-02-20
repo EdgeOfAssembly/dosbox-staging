@@ -12,16 +12,7 @@ if(OPT_OPUS)
 
   if(USE_SYSTEM_LIBS)
     pkg_check_modules(OPUSFILE REQUIRED IMPORTED_TARGET opusfile)
-
-    target_include_directories(
-      libdecoders PRIVATE ${OPUSFILE_INCLUDE_DIRS}
-    )
-    target_compile_options(
-      libdecoders PRIVATE ${OPUSFILE_CFLAGS_OTHER}
-    )
-    target_link_libraries(
-      libdecoders PRIVATE ${OPUSFILE_LIBRARIES}
-    )
+    target_link_libraries(libdecoders PRIVATE PkgConfig::OPUSFILE)
   else()
     find_package(OpusFile REQUIRED)
     target_link_libraries(

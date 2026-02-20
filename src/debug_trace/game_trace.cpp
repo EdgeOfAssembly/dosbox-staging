@@ -345,6 +345,9 @@ void DEBUGTRACE_Init()
 	init_debugtrace_settings(*section);
 
 	if (!g_config.enabled) {
+		// Master switch is off: g_trace_enabled stays false, g_debugtrace_system_ready
+		// stays false.  Every integration-point check is a single bool test — zero
+		// overhead for the normal non-tracing use case.
 		return;
 	}
 
@@ -366,13 +369,25 @@ void DEBUGTRACE_Init()
 		}
 	}
 
-	// When auto_trace_on_exec is false we start tracing immediately
+	// Startup-tracing guarantee:
+	//
+	// With auto_trace_on_exec=true  (default): g_trace_enabled stays false here.
+	//   Tracing ONLY becomes active when the first external program is executed
+	//   via INT 21h/AH=4Bh (i.e. when the user actually runs a game).  The
+	//   DOSBox shell itself starts through an internal callback — NOT via INT
+	//   21h — so it never triggers this path.
+	//
+	// With auto_trace_on_exec=false: tracing starts immediately (below).  Use
+	//   this only if you explicitly want to capture the full DOSBox session
+	//   including shell activity.
 	if (!g_config.auto_trace_on_exec) {
 		set_epoch_now();
 		g_trace_enabled = true;
 		DEBUGTRACE_Write("[debugtrace] === TRACE LOGGING STARTED ===");
 	}
 
+	// Mark the system as ready.  From this point ExecLogger_Log will respond
+	// to INT 21h/4Bh calls and activate tracing on the first EXEC.
 	g_debugtrace_system_ready = true;
 	FileIOLogger_Init();
 }
@@ -424,6 +439,18 @@ void DEBUGTRACE_OnProgramTerminate(const uint8_t return_code)
 {
 	// Nothing to do if tracing is not currently active
 	if (!g_trace_enabled) {
+		return;
+	}
+
+	// When auto_trace_on_exec is false the user asked for a continuous
+	// whole-session trace; depth-based deactivation does not apply.
+	if (!g_config.auto_trace_on_exec) {
+		char line[128];
+		snprintf(line, sizeof(line),
+		         "[T+%08" PRIu64 "ms] === PROGRAM TERMINATED (exit code %u) ===",
+		         DEBUGTRACE_GetElapsedMs(),
+		         static_cast<unsigned>(return_code));
+		DEBUGTRACE_Write(line);
 		return;
 	}
 

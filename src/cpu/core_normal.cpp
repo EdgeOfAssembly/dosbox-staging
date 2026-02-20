@@ -21,6 +21,8 @@
 #include "debugger/debugger.h"
 #endif
 
+#include "debug_trace/game_trace.h"
+
 #if (!C_CORE_INLINE)
 #define LoadMb(off) mem_readb(off)
 #define LoadMw(off) mem_readw(off)
@@ -149,6 +151,15 @@ Bits CPU_Core_Normal_Run() noexcept
 #endif
 		cycle_count++;
 #endif
+		if (g_trace_enabled) {
+			// Log the instruction BEFORE it is decoded and executed.
+			// reg_eip here is the starting IP of the instruction about
+			// to be fetched — correct for reverse-engineering purposes.
+			// Instructions that fault (invalid opcode, etc.) will still
+			// appear in the log even though they were never completed.
+			DEBUGTRACE_LogInstruction(SegValue(cs),
+			                          static_cast<uint16_t>(reg_eip));
+		}
 restart_opcode:
 		switch (core.opcode_index+Fetchb()) {
 		#include "core_normal/prefix_none.h"

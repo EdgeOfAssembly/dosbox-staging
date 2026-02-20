@@ -32,6 +32,7 @@
 #include "programs/mount_common.h"
 #include "utils/ascii.h"
 #include "utils/string_utils.h"
+#include "debug_trace/game_trace.h"
 
 #if defined(WIN32)
 #include <winsock2.h> // for gethostname
@@ -440,6 +441,7 @@ static Bitu DOS_21Handler(void) {
 
 	switch (reg_ah) {
 	case 0x00:		/* Terminate Program */
+		DEBUGTRACE_OnProgramTerminate(0);
 		DOS_Terminate(real_readw(SegValue(ss),reg_sp+2),false,0);
 		break;
 	case 0x01:		/* Read character from STDIN, with echo */
@@ -988,7 +990,13 @@ static Bitu DOS_21Handler(void) {
 		break;
 	case 0x3c:		/* CREATE Create of truncate file */
 		MEM_StrCopy(SegPhys(ds)+reg_dx,name1,DOSNAMEBUF);
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogFileCreate(name1, reg_cx);
+		}
 		if (DOS_CreateFile(name1, reg_cl, &reg_ax)) {
+			if (g_trace_enabled) {
+				DEBUGTRACE_RecordHandleOpen(reg_ax, name1);
+			}
 			DOS_PerformDiskIoDelayByHandle(EstimatedFileCreationIoOverheadInBytes,
 			                               reg_bx);
 			CALLBACK_SCF(false);
@@ -999,7 +1007,13 @@ static Bitu DOS_21Handler(void) {
 		break;
 	case 0x3d:		/* OPEN Open existing file */
 		MEM_StrCopy(SegPhys(ds)+reg_dx,name1,DOSNAMEBUF);
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogFileOpen(name1, reg_al);
+		}
 		if (DOS_OpenFile(name1, reg_al, &reg_ax)) {
+			if (g_trace_enabled) {
+				DEBUGTRACE_RecordHandleOpen(reg_ax, name1);
+			}
 			DOS_PerformDiskIoDelayByHandle(EstimatedFileOpenIoOverheadInBytes,
 			                               reg_bx);
 			CALLBACK_SCF(false);
@@ -1009,6 +1023,9 @@ static Bitu DOS_21Handler(void) {
 		}
 		break;
 	case 0x3e:		/* CLOSE Close file */
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogFileClose(reg_bx);
+		}
 		if (DOS_CloseFile(reg_bx,false,&reg_al)) {
 			/* al destroyed with pre-close refcount from sft */
 			DOS_PerformDiskIoDelayByHandle(EstimatedFileCloseIoOverheadInBytes,
@@ -1022,11 +1039,19 @@ static Bitu DOS_21Handler(void) {
 	case 0x3f:		/* READ Read from file or device */
 		{ 
 			uint16_t toread=DOS_GetAmount();
+			if (g_trace_enabled) {
+				DEBUGTRACE_LogFileReadPre(reg_bx, toread,
+				                          SegValue(ds), reg_dx);
+			}
 			dos.echo=true;
 			if (DOS_ReadFile(reg_bx,dos_copybuf,&toread)) {
 			        DOS_PerformDiskIoDelayByHandle(toread, reg_bx);
 			        MEM_BlockWrite(SegPhys(ds)+reg_dx,dos_copybuf,toread);
 				reg_ax=toread;
+				if (g_trace_enabled) {
+					DEBUGTRACE_LogFileReadPost(reg_bx, toread,
+					                           SegPhys(ds)+reg_dx);
+				}
 				CALLBACK_SCF(false);
 			} else {
 				reg_ax=dos.errorcode;
@@ -1181,6 +1206,7 @@ static Bitu DOS_21Handler(void) {
 			result_errorcode = 0;
 			MEM_StrCopy(SegPhys(ds)+reg_dx,name1,DOSNAMEBUF);
 			LOG(LOG_EXEC,LOG_ERROR)("Execute %s %d",name1,reg_al);
+			DEBUGTRACE_LogExec(name1, nullptr);
 			if (!DOS_Execute(name1,SegPhys(es)+reg_bx,reg_al)) {
 				reg_ax=dos.errorcode;
 				CALLBACK_SCF(true);
@@ -1189,6 +1215,7 @@ static Bitu DOS_21Handler(void) {
 		break;
 //TODO Check for use of execution state AL=5
 	case 0x4c:					/* EXIT Terminate with return code */
+		DEBUGTRACE_OnProgramTerminate(reg_al);
 		DOS_Terminate(dos.psp(),false,reg_al);
 		if (result_errorcode)
 			dos.return_code = result_errorcode;

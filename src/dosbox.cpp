@@ -73,6 +73,7 @@
 #include "utils/math_utils.h"
 #include "webserver/webserver.h"
 #include "webserver/bridge.h"
+#include "debug_trace/game_trace.h"
 
 MachineType machine   = MachineType::None;
 SvgaType    svga_type = SvgaType::None;
@@ -1087,6 +1088,7 @@ void DOSBOX_InitModuleConfigsAndMessages()
 
 	ETHERNET_AddConfigSection(control);
 	WEBSERVER_AddConfigSection(control);
+	DEBUGTRACE_AddConfigSection(control);
 
 	control->AddAutoexecSection();
 
@@ -1148,6 +1150,8 @@ void DOSBOX_InitModules()
 	SERIAL_Init();
 	DOS_Init();
 
+	DEBUGTRACE_Init();
+
 	IPX_Init();
 	ETHERNET_Init();
 	VIRTUALBOX_Init();
@@ -1166,6 +1170,7 @@ void DOSBOX_DestroyModules()
 	IPX_Destroy();
 
 	DOS_Destroy();
+	DEBUGTRACE_Shutdown();
 	SERIAL_Destroy();
 	DISKNOISE_Destroy();
 

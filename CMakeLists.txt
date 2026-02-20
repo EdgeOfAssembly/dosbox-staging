@@ -309,6 +309,11 @@ if (OPT_MT32EMU)
   set(C_MT32EMU ON)
 endif()
 
+option(OPT_OPUS "Enable Opus audio codec support via opusfile" ON)
+if (OPT_OPUS)
+  set(C_OPUS ON)
+endif()
+
 if (OPT_DEBUGGER)
   set(C_DEBUGGER ON)
 

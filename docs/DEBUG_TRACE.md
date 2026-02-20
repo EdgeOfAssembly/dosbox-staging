@@ -162,6 +162,7 @@ tracing, set `logfile = /dev/shm/game_trace.log` (Linux tmpfs) or use an SSD.
   (dyn-x86, dynrec) do not produce instruction traces.
 - The instruction log prints the raw opcode bytes; use a standalone disassembler
   (e.g. `ndisasm`, `objdump`, Ghidra, IDA) to decode them.
-- The `PSP` field in the EXEC log line shows the **stack segment** value at the
-  time of the EXEC call, which may differ from the actual PSP segment by a
-  small amount depending on DOS internals.
+- The field labelled `PSP` in the EXEC log line records the caller's **stack
+  segment (SS)** value at the time of the EXEC call.  This is not the PSP
+  segment of the program being executed; use a DOS debugger to correlate the
+  actual PSP segment if needed.

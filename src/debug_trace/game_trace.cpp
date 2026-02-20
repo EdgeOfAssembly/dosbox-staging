@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText:  2024-2025 The DOSBox Staging Team
+// SPDX-FileCopyrightText:  2026 The DOSBox Staging Team
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Core tracing engine: log-file management, timing, shared state.
@@ -350,7 +350,9 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 
 	pint = section->AddInt("max_log_size_mb", OnlyAtStart, 0);
 	pint->SetHelp(
-	        "Maximum log file size in megabytes before auto-rotation ('0' = unlimited).");
+	        "Reserved for future use.  Intended to limit the log file size in megabytes\n"
+	        "before auto-rotation, but this setting is currently not enforced and the\n"
+	        "log size is always unlimited regardless of its value.");
 }
 
 // ---------------------------------------------------------------------------
@@ -476,7 +478,14 @@ void DEBUGTRACE_OnProgramTerminate(const uint8_t return_code)
 		return;
 	}
 
-	--s_exec_depth;
+	if (s_exec_depth > 0) {
+		--s_exec_depth;
+	} else {
+		// Underflow guard: more terminate calls than exec pushes.  This
+		// can happen in unusual DOS scenarios; clamp and log a warning.
+		DEBUGTRACE_Write("[debugtrace] WARNING: program terminate without matching EXEC push");
+		s_exec_depth = 0;
+	}
 
 	char line[128];
 	snprintf(line, sizeof(line),

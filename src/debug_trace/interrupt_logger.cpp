@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText:  2024-2025 The DOSBox Staging Team
+// SPDX-FileCopyrightText:  2026 The DOSBox Staging Team
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // Software interrupt call logger with human-readable descriptions for the most

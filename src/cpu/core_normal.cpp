@@ -152,6 +152,11 @@ Bits CPU_Core_Normal_Run() noexcept
 		cycle_count++;
 #endif
 		if (g_trace_enabled) {
+			// Log the instruction BEFORE it is decoded and executed.
+			// reg_eip here is the starting IP of the instruction about
+			// to be fetched — correct for reverse-engineering purposes.
+			// Instructions that fault (invalid opcode, etc.) will still
+			// appear in the log even though they were never completed.
 			DEBUGTRACE_LogInstruction(SegValue(cs),
 			                          static_cast<uint16_t>(reg_eip));
 		}

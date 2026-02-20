@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText:  2024-2025 The DOSBox Staging Team
+// SPDX-FileCopyrightText:  2026 The DOSBox Staging Team
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 // DOS file I/O interception logger.
@@ -7,6 +7,7 @@
 #include "file_io_logger.h"
 #include "game_trace.h"
 
+#include "dos/dos.h"
 #include "hardware/memory.h"
 
 #include <algorithm>
@@ -74,10 +75,16 @@ void FileIOLogger_Init()
 void FileIOLogger_Shutdown()
 {
 	s_handle_map.clear();
+	s_pending_read.active = false;
 }
 
 void FileIOLogger_RecordHandle(const uint16_t handle, const char* filename)
 {
+	// DOS file handles are 0–254 (DOS_FILES - 1); reject out-of-range values
+	// to prevent unbounded map growth from malformed or synthetic handles.
+	if (handle >= DOS_FILES) {
+		return;
+	}
 	if (filename && filename[0]) {
 		s_handle_map[handle] = filename;
 	}

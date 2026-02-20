@@ -2,6 +2,7 @@ add_subdirectory(audio)
 add_subdirectory(capture)
 add_subdirectory(config)
 add_subdirectory(cpu)
+add_subdirectory(debug_trace)
 
 if (OPT_DEBUGGER)
   add_subdirectory(debugger)

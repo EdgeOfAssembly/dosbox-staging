@@ -11,6 +11,7 @@
 #include "int10.h"
 #include "hardware/input/mouse.h"
 #include "config/setup.h"
+#include "debug_trace/game_trace.h"
 
 Int10Data int10;
 static callback_number_t call_10 = 0;
@@ -45,6 +46,10 @@ static Bitu INT10_Handler(void) {
 
 	switch (reg_ah) {
 	case 0x00:								/* Set VideoMode */
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogVideoModeSwitch(CurMode->mode,
+			                              static_cast<uint16_t>(reg_al));
+		}
 		MOUSEDOS_BeforeNewVideoMode();
 		INT10_SetVideoMode(reg_al);
 		MOUSEDOS_AfterNewVideoMode(true);

@@ -12,7 +12,9 @@
 
 #include "config/setup.h"
 
+#include <cctype>
 #include <chrono>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -51,6 +53,12 @@ static bool  g_own_file = false;  // true if we opened it and must close it
 static std::chrono::steady_clock::time_point g_epoch;
 static bool g_epoch_set = false;
 
+// Tracks how many non-TSR programs are currently executing under the trace.
+// Incremented on each EXEC while tracing is active; decremented on AH=4Ch /
+// AH=00h exit.  When it reaches zero the top-level game has returned to the
+// shell and tracing is automatically deactivated.
+static int s_exec_depth = 0;
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -79,7 +87,7 @@ uint64_t DEBUGTRACE_GetElapsedMs()
 }
 
 // Used by sub-loggers to write a formatted line to the log.
-// Not declared in the public header — internal linkage is fine.
+// Declared in game_trace.h; defined here where the file handle lives.
 void DEBUGTRACE_Write(const char* line)
 {
 	FILE* fp = g_log_fp ? g_log_fp : stdout;
@@ -387,10 +395,14 @@ void DEBUGTRACE_Shutdown()
 
 	g_trace_enabled = false;
 	g_debugtrace_system_ready = false;
+	s_exec_depth = 0;
 	FileIOLogger_Shutdown();
 }
 
 // Called by ExecLogger when the first EXEC is detected (auto_trace_on_exec mode)
+// ---------------------------------------------------------------------------
+// Exec-depth tracking (in anonymous namespace so only this TU sees it)
+// ---------------------------------------------------------------------------
 void DEBUGTRACE_ActivateTrace()
 {
 	if (g_trace_enabled) {
@@ -398,4 +410,40 @@ void DEBUGTRACE_ActivateTrace()
 	}
 	set_epoch_now();
 	g_trace_enabled = true;
+}
+
+void DEBUGTRACE_OnExecDepthPush()
+{
+	// Only track depth while tracing is active
+	if (g_trace_enabled) {
+		++s_exec_depth;
+	}
+}
+
+void DEBUGTRACE_OnProgramTerminate(const uint8_t return_code)
+{
+	// Nothing to do if tracing is not currently active
+	if (!g_trace_enabled) {
+		return;
+	}
+
+	--s_exec_depth;
+
+	char line[128];
+	snprintf(line, sizeof(line),
+	         "[T+%08" PRIu64 "ms] === PROGRAM TERMINATED (exit code %u, "
+	         "remaining depth %d) ===",
+	         DEBUGTRACE_GetElapsedMs(),
+	         static_cast<unsigned>(return_code),
+	         s_exec_depth);
+	DEBUGTRACE_Write(line);
+
+	if (s_exec_depth <= 0) {
+		// The top-level traced program has exited — stop logging
+		s_exec_depth = 0;
+		g_trace_enabled = false;
+		DEBUGTRACE_Write("[debugtrace] === TRACE LOGGING DEACTIVATED (program exited) ===");
+		// Keep g_debugtrace_system_ready=true and the log file open so
+		// the user can run the game again in the same session.
+	}
 }

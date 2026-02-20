@@ -441,6 +441,7 @@ static Bitu DOS_21Handler(void) {
 
 	switch (reg_ah) {
 	case 0x00:		/* Terminate Program */
+		DEBUGTRACE_OnProgramTerminate(0);
 		DOS_Terminate(real_readw(SegValue(ss),reg_sp+2),false,0);
 		break;
 	case 0x01:		/* Read character from STDIN, with echo */
@@ -1214,6 +1215,7 @@ static Bitu DOS_21Handler(void) {
 		break;
 //TODO Check for use of execution state AL=5
 	case 0x4c:					/* EXIT Terminate with return code */
+		DEBUGTRACE_OnProgramTerminate(reg_al);
 		DOS_Terminate(dos.psp(),false,reg_al);
 		if (result_errorcode)
 			dos.return_code = result_errorcode;

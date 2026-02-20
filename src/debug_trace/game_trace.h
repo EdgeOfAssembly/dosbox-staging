@@ -117,4 +117,14 @@ int  DEBUGTRACE_InstructionSampleRate();
 // Activate tracing (called by ExecLogger on first EXEC when auto_trace_on_exec).
 void DEBUGTRACE_ActivateTrace();
 
+// Called from INT 21h/AH=4Bh after activation to increment the exec depth.
+// The depth counter prevents a child-process exit from stopping the trace of
+// the parent game.
+void DEBUGTRACE_OnExecDepthPush();
+
+// Called from INT 21h/AH=4Ch and AH=00h (normal program termination).
+// Decrements the exec depth; deactivates tracing when it reaches zero.
+// Must NOT be called for AH=31h (TSR) — those must never affect the depth.
+void DEBUGTRACE_OnProgramTerminate(uint8_t return_code);
+
 #endif // DOSBOX_GAME_TRACE_H

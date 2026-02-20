@@ -61,7 +61,9 @@ static constexpr VideoModeDesc k_mode_table[] = {
 static const char* lookup_mode_desc(const uint16_t mode)
 {
 	for (const auto& entry : k_mode_table) {
-		if (entry.mode == (mode & 0x7FFF)) { // mask bit 15 (don't clear)
+		// Mask bit 15: in INT 10h/AH=00h, bit 15 of AL is the "don't
+		// clear the screen" flag, not part of the mode number itself.
+		if (entry.mode == (mode & 0x7FFF)) {
 			return entry.description;
 		}
 	}

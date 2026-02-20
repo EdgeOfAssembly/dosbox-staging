@@ -24,6 +24,7 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 	}
 
 	// Activate tracing if in auto_trace_on_exec mode
+	const bool was_already_active = g_trace_enabled;
 	if (DEBUGTRACE_AutoTraceOnExec()) {
 		DEBUGTRACE_ActivateTrace();
 	}
@@ -32,6 +33,9 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 	if (!g_trace_enabled) {
 		return;
 	}
+
+	// Track nesting so child-process exits don't prematurely stop tracing
+	DEBUGTRACE_OnExecDepthPush();
 
 	char line[512];
 	snprintf(line, sizeof(line),
@@ -44,7 +48,8 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 
 	DEBUGTRACE_Write(line);
 
-	if (DEBUGTRACE_AutoTraceOnExec()) {
-		DEBUGTRACE_Write("[T+00000000ms] === FULL TRACE LOGGING ACTIVATED ===");
+	// Only print the activation banner when tracing just turned on
+	if (!was_already_active && DEBUGTRACE_AutoTraceOnExec()) {
+		DEBUGTRACE_Write("[debugtrace] === FULL TRACE LOGGING ACTIVATED ===");
 	}
 }

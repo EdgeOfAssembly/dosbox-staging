@@ -111,6 +111,11 @@ bool DEBUGTRACE_IsInterruptExcluded(uint8_t int_num);
 
 // Accessors for per-subsystem configuration values.
 bool DEBUGTRACE_AutoTraceOnExec();
+// When true, tracing activation is restricted to programs started from the
+// interactive shell prompt.  Programs launched from autoexec.bat or any other
+// batch file will not trigger trace activation (though they will still be
+// traced once the game itself activates tracing).
+bool DEBUGTRACE_TraceOnInteractiveExecOnly();
 int  DEBUGTRACE_FileReadHexDumpBytes();
 int  DEBUGTRACE_InstructionSampleRate();
 

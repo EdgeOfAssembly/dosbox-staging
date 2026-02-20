@@ -180,15 +180,16 @@ void FileIOLogger_LogReadPost(const uint16_t handle,
 		return;
 	}
 
-	// Read from emulated memory
-	static uint8_t buf[512]; // generous upper bound
+	// Read from emulated memory into a local buffer (max hex-dump size is
+	// capped at 512 bytes; the config default is 64).
+	uint8_t buf[512];
 	const int to_read = std::min(dump_bytes, (int)sizeof(buf));
 	for (int i = 0; i < to_read; ++i) {
 		buf[i] = mem_readb(buf_phys + i);
 	}
 
 	// Format hex dump — each byte is "XX " (3 chars) + NUL
-	static char hex_line[512 * 3 + 64];
+	char hex_line[512 * 3 + 64];
 	const int prefix_len = snprintf(hex_line, sizeof(hex_line),
 	         "[T+%08" PRIu64 "ms] FILE DATA [first %d bytes]: ",
 	         DEBUGTRACE_GetElapsedMs(),

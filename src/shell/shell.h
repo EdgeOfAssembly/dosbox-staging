@@ -23,6 +23,10 @@ extern callback_number_t call_shellstop;
 
 DOS_Shell* DOS_GetFirstShell();
 
+// Returns true when the primary shell is sitting at an interactive prompt —
+// i.e. it is NOT currently executing a batch file (autoexec.bat or any .bat).
+bool DOS_ShellIsInteractive();
+
 class LineReader {
 public:
 	virtual void Reset()       = 0;

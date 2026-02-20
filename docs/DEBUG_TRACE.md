@@ -20,6 +20,7 @@ trace_interrupts = true
 trace_file_io = true
 trace_video_modes = true
 auto_trace_on_exec = true
+trace_on_interactive_exec_only = true
 exclude_interrupts = 08,1C
 file_read_hex_dump_bytes = 64
 instruction_sample_rate = 1
@@ -43,6 +44,7 @@ event is logged to `game_trace.log`.
 | `trace_file_io` | `true` | Log DOS file open/read/close with optional hex dumps. |
 | `trace_video_modes` | `true` | Log INT 10h video mode switches. |
 | `auto_trace_on_exec` | `true` | Start tracing when the first program is loaded via INT 21h/AH=4Bh. |
+| `trace_on_interactive_exec_only` | `true` | Only activate tracing when the user starts a program from the **interactive** DOS prompt. Programs launched from autoexec.bat or any other batch file are ignored for activation. Once the game is running, its own child processes are always traced. |
 | `exclude_interrupts` | `08,1C` | Comma-separated hex list of interrupt numbers to suppress (timer IRQs by default). |
 | `file_read_hex_dump_bytes` | `64` | Number of bytes to hex-dump after each file read.  `0` disables dumps. |
 | `instruction_sample_rate` | `1` | Log every Nth instruction (`1` = all, `10` = every tenth, etc.). |

@@ -36,7 +36,8 @@ struct TraceConfig {
 	bool        trace_interrupts     = true;
 	bool        trace_file_io        = true;
 	bool        trace_video_modes    = true;
-	bool        auto_trace_on_exec   = true;
+	bool        auto_trace_on_exec              = true;
+	bool        trace_on_interactive_exec_only  = true;
 	std::string exclude_interrupts   = "08,1C";
 	int         file_read_hex_dump   = 64;
 	int         instruction_sample_rate = 1;
@@ -107,7 +108,9 @@ bool DEBUGTRACE_IsInterruptExcluded(uint8_t int_num)
 	}
 	char hex[3];
 	snprintf(hex, sizeof(hex), "%02X", int_num);
-	// Case-insensitive search through comma-separated list
+
+	// Walk the comma-separated exclusion list.  Both sides are upper-cased
+	// before comparison so "08,1c" and "08,1C" are equivalent.
 	const auto& excl = g_config.exclude_interrupts;
 	for (size_t pos = 0; pos < excl.size(); ) {
 		size_t comma = excl.find(',', pos);
@@ -115,10 +118,15 @@ bool DEBUGTRACE_IsInterruptExcluded(uint8_t int_num)
 			comma = excl.size();
 		}
 		const auto token = excl.substr(pos, comma - pos);
-		if (token.size() == 2 &&
-		    toupper((unsigned char)token[0]) == toupper((unsigned char)hex[0]) &&
-		    toupper((unsigned char)token[1]) == toupper((unsigned char)hex[1])) {
-			return true;
+		// Trim leading/trailing spaces so "08, 1C" also works
+		const size_t first = token.find_first_not_of(' ');
+		const size_t last  = token.find_last_not_of(' ');
+		if (first != std::string::npos && (last - first + 1) == 2) {
+			const auto t0 = toupper((unsigned char)token[first]);
+			const auto t1 = toupper((unsigned char)token[first + 1]);
+			if (t0 == (unsigned char)hex[0] && t1 == (unsigned char)hex[1]) {
+				return true;
+			}
 		}
 		pos = comma + 1;
 	}
@@ -148,6 +156,11 @@ bool DEBUGTRACE_TraceVideoModes()
 bool DEBUGTRACE_AutoTraceOnExec()
 {
 	return g_config.auto_trace_on_exec;
+}
+
+bool DEBUGTRACE_TraceOnInteractiveExecOnly()
+{
+	return g_config.trace_on_interactive_exec_only;
 }
 
 int DEBUGTRACE_FileReadHexDumpBytes()
@@ -259,7 +272,8 @@ static void init_debugtrace_settings(const SectionProp& section)
 	g_config.trace_interrupts    = section.GetBool("trace_interrupts");
 	g_config.trace_file_io       = section.GetBool("trace_file_io");
 	g_config.trace_video_modes   = section.GetBool("trace_video_modes");
-	g_config.auto_trace_on_exec  = section.GetBool("auto_trace_on_exec");
+	g_config.auto_trace_on_exec             = section.GetBool("auto_trace_on_exec");
+	g_config.trace_on_interactive_exec_only = section.GetBool("trace_on_interactive_exec_only");
 	g_config.exclude_interrupts  = section.GetString("exclude_interrupts");
 	g_config.file_read_hex_dump  = section.GetInt("file_read_hex_dump_bytes");
 	g_config.instruction_sample_rate = section.GetInt("instruction_sample_rate");
@@ -311,6 +325,14 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	pbool->SetHelp(
 	        "Automatically start full tracing when a program is loaded via\n"
 	        "INT 21h/AH=4Bh (EXEC) ('true' by default).");
+
+	pbool = section->AddBool("trace_on_interactive_exec_only", OnlyAtStart, true);
+	pbool->SetHelp(
+	        "When 'true' (default), tracing only activates when the user starts a\n"
+	        "program from the interactive DOS prompt.  Programs launched automatically\n"
+	        "from autoexec.bat or any other batch file are ignored for activation\n"
+	        "purposes.  Has no effect once tracing is already active — the game's own\n"
+	        "child processes and batch scripts are always traced normally.");
 
 	pstring = section->AddString("exclude_interrupts", OnlyAtStart, "08,1C");
 	pstring->SetHelp(

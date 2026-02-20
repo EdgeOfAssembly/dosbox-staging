@@ -9,12 +9,10 @@
 #include "game_trace.h"
 
 #include "cpu/registers.h"
+#include "shell/shell.h"
 
 #include <cinttypes>
 #include <cstdio>
-
-// game_trace.cpp; activates the trace epoch and sets g_trace_enabled.
-// (Declared in game_trace.h)
 
 void ExecLogger_Log(const char* filename, const char* cmdline)
 {
@@ -23,13 +21,28 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 		return;
 	}
 
-	// Activate tracing if in auto_trace_on_exec mode
+	// --- Activation gate ---
+	// We only attempt to activate tracing when it is not yet running.
+	// Once g_trace_enabled is true, every EXEC (including ones from the
+	// game's own batch scripts or child processes) is traced normally —
+	// the interactive-only check is irrelevant at that point.
 	const bool was_already_active = g_trace_enabled;
-	if (DEBUGTRACE_AutoTraceOnExec()) {
-		DEBUGTRACE_ActivateTrace();
+	if (!was_already_active && DEBUGTRACE_AutoTraceOnExec()) {
+		bool may_activate = true;
+
+		if (DEBUGTRACE_TraceOnInteractiveExecOnly()) {
+			// Only activate when the shell is sitting at an interactive
+			// prompt — i.e. no batch file (autoexec.bat, any .bat) is
+			// currently being processed.
+			may_activate = DOS_ShellIsInteractive();
+		}
+
+		if (may_activate) {
+			DEBUGTRACE_ActivateTrace();
+		}
 	}
 
-	// Now log the EXEC event (g_trace_enabled may have just been set)
+	// Nothing to do if tracing did not (or could not yet) activate
 	if (!g_trace_enabled) {
 		return;
 	}

@@ -7,19 +7,28 @@
 #include <cstdint>
 
 // Initialise the binary opcode dump subsystem.
-// Opens the output file. No-op if binary_opcode_dump=false.
+//
+// Creates two memory-mapped files:
+//   <filepath>         — 1 MB flat image of the 8086 physical address space.
+//                        image[offset] == the byte at physical address offset.
+//   <filepath>.bitmap  — 128 KB coverage bitmap (1 bit per physical address).
+//                        Bit N is set iff address N was an executed instruction start.
+//
+// Both files are pre-zeroed and mapped with PROT_READ|PROT_WRITE / MAP_SHARED
+// (POSIX) or CreateFileMapping/MapViewOfFile (Win32).
+// No-op if binary_opcode_dump=false or filepath is empty.
 void OpcodeDump_Init(const char* filepath);
 
-// Shut down and flush/close the binary dump file.
+// Flush and close both mapped files.
 void OpcodeDump_Shutdown();
 
-// Append the raw bytes of one instruction to the binary dump.
-//   phys_ip     : 20-bit physical address of the instruction start
-//   num_bytes   : number of opcode bytes to write (must be > 0, typically 1)
+// Record one executed instruction into the flat image and coverage bitmap.
+//   phys_ip   : 20-bit physical address of the instruction start
+//   num_bytes : byte length of the instruction (must be > 0)
 //
-// Note: the output is a sequence of opcode bytes from each instruction executed.
-// For each call, num_bytes bytes are written starting at phys_ip.  The consumer
-// can perform frequency analysis, coverage mapping, etc. on this raw byte stream.
+// Writes instruction bytes into the flat image at their exact physical offsets
+// and sets the coverage bitmap bit for phys_ip.  Operations are idempotent:
+// re-executing the same address writes the same bytes to the same location.
 void OpcodeDump_Write(uint32_t phys_ip, int num_bytes);
 
 #endif // DOSBOX_OPCODE_DUMP_H

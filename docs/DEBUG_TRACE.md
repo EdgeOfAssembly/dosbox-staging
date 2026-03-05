@@ -187,13 +187,29 @@ tracing, set `logfile = /dev/shm/game_trace.log` (Linux tmpfs) or use an SSD.
 
 ## Binary Opcode Dump
 
-Setting `binary_opcode_dump = true` writes a flat binary file (`opcodes.bin` by
-default, configurable via `binary_opcode_file`) containing the **complete bytes**
-of every instruction executed while tracing is active.
+Setting `binary_opcode_dump = true` produces a **1 MB flat memory image** of
+the entire 8086 physical address space plus a **128 KB coverage bitmap**,
+allowing precise, address-correct disassembly of every executed instruction.
 
-The file is a flat, contiguous stream of instruction bytes — all bytes of each
-executed instruction are written in order, so the file is a valid 16-bit x86
-instruction stream that can be disassembled directly.
+Two files are written:
+
+| File | Size | Content |
+|------|------|---------|
+| `opcodes.bin` (configurable via `binary_opcode_file`) | 1 048 576 bytes (1 MB) | Flat image — `image[offset]` == byte at physical address `offset` |
+| `opcodes.bin.bitmap` | 131 072 bytes (128 KB) | Coverage bitmap — bit N set iff physical address N was an executed instruction start |
+
+### Why this design is correct
+
+With a 1:1 flat address map, **execution order does not matter**.  Every
+instruction at physical address `X` writes its bytes to file offset `X`.
+Whether we reach `X` via a forward jump, backward jump, call, `ret`, or
+interrupt — the bytes always land at offset `X`.  Re-execution of the same
+address writes the same bytes to the same offsets: the operation is completely
+**idempotent**.
+
+The coverage bitmap records exactly which addresses were instruction starts,
+giving the post-processor the precise set of disassembly entry points without
+any ambiguity about code vs. data vs. unexecuted regions.
 
 This is **completely independent** of `trace_instructions` — all four
 combinations are supported:
@@ -201,39 +217,56 @@ combinations are supported:
 | `trace_instructions` | `binary_opcode_dump` | Result |
 |---|---|---|
 | `true` | `false` | Human-readable text log only (default behaviour) |
-| `false` | `true` | Binary dump only, no per-instruction text lines |
+| `false` | `true` | Flat-image dump only, no per-instruction text lines |
 | `true` | `true` | Both simultaneously |
 | `false` | `false` | Neither (tracing still active for interrupts/file I/O etc.) |
 
-The binary file is a raw stream of complete instruction bytes.  It is useful for:
+### Post-processing with `memory_dump_solution.py`
 
-- **Direct disassembly**: the stream is valid x86-16 and can be passed straight
-  to `ndisasm` or any flat-binary disassembler.
-- **Frequency analysis**: count how often each opcode (first byte) appears.
-- **Coverage mapping**: which instructions does the program ever execute?
-- **Lightweight recording**: much smaller than the full text trace.
-
-The instruction bytes in `opcodes.bin` correspond exactly to the `BYTES=` fields
-in `game_trace.log` — for example, an entry with `BYTES=EB 32 …` produces the
-two bytes `EB 32` in the binary file.
-
-To disassemble or analyse the file:
+The companion script `scripts/tools/memory_dump_solution.py` reads both files
+and produces a clean, address-sorted disassembly:
 
 ```sh
-# Disassemble as 16-bit real-mode x86 (requires nasm / ndisasm)
-ndisasm -b16 opcodes.bin | less
+# Basic disassembly (hex bytes + optional capstone mnemonics)
+python3 scripts/tools/memory_dump_solution.py opcodes.bin
 
-# Count opcode frequency (first byte of each instruction)
+# Write to a file
+python3 scripts/tools/memory_dump_solution.py -o disassembly.asm opcodes.bin
+
+# Show coverage statistics (executed instruction count, byte count, coverage %)
+python3 scripts/tools/memory_dump_solution.py --stats opcodes.bin
+```
+
+Install [capstone](https://www.capstone-engine.org/) for full mnemonics:
+
+```sh
+pip install capstone
+python3 scripts/tools/memory_dump_solution.py opcodes.bin
+```
+
+Without capstone the script still works, printing instruction bytes as hex
+along with a note to install capstone for mnemonics.
+
+### Manual analysis with standard tools
+
+```sh
+# Inspect the raw flat image with xxd (address N → file offset N)
+xxd opcodes.bin | head -40
+
+# Count how often each byte value appears in the executed region
 python3 -c "
-import collections, sys
-data = open('opcodes.bin','rb').read()
-c = collections.Counter(data)
-for b,n in c.most_common(20):
+import collections
+image  = open('opcodes.bin',        'rb').read()
+bitmap = open('opcodes.bin.bitmap', 'rb').read()
+counts = collections.Counter()
+for byte_idx, byte_val in enumerate(bitmap):
+    for bit in range(8):
+        if byte_val & (1 << bit):
+            addr = byte_idx * 8 + bit
+            counts[image[addr]] += 1
+for b, n in counts.most_common(20):
     print(f'  {b:02X}  {n:8d}')
 "
-
-# View first bytes with xxd
-xxd opcodes.bin | head -20
 ```
 
 ---

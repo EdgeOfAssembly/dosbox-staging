@@ -117,11 +117,11 @@ int x86_insn_length_real_mode(const uint32_t phys_ip)
 			continue; // consume and loop
 
 		case 0x66: // Operand-size override (386+)
-			op32 = !op32;
+			op32 = true;
 			continue;
 
 		case 0x67: // Address-size override (386+)
-			addr32 = !addr32;
+			addr32 = true;
 			continue;
 
 		default:
@@ -168,9 +168,29 @@ done_prefix_loop:;
 			off += 1; // imm8
 			break;
 
-		// Most other 0F opcodes: ModRM, no immediate.
-		// This is a conservative catch-all — covers BSF/BSR, MOVSX/MOVZX,
-		// CMOVcc, IMUL r,r/m, etc.
+		// BT/BTS/BTR/BTC r/m, imm8
+		case 0xBA:
+			consume_modrm(base, off, addr32);
+			off += 1; // imm8
+			break;
+
+		// 0F opcodes with no ModRM and no immediate:
+		// RDTSC (31), RDMSR (32), WRMSR (30), RDPMC (33),
+		// CPUID (A2), EMMS (77), UD2 (0B), RSM (AA),
+		// WBINVD (09), INVD (08), CLTS (06), etc.
+		case 0x06: case 0x08: case 0x09: case 0x0B:
+		case 0x20: case 0x21: case 0x22: case 0x23: // MOV r, CRn / DRn
+		case 0x30: case 0x31: case 0x32: case 0x33:
+		case 0x77: // EMMS
+		case 0xA2: // CPUID
+		case 0xAA: // RSM
+			break; // no additional bytes
+
+		// ModRM-only opcodes: BSF, BSR, MOVSX, MOVZX, CMOVcc, IMUL,
+		// LAR, LSL, LFS, LGS, LSS, etc.
+		// This catch-all is intentionally placed last and covers any
+		// 0F-prefixed opcode not listed above; it errs on the side of
+		// consuming a ModRM byte (the common case for 0F opcodes).
 		default:
 			consume_modrm(base, off, addr32);
 			break;

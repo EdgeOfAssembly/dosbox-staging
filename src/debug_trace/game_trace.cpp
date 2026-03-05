@@ -315,8 +315,14 @@ static void init_debugtrace_settings(const SectionProp& section)
 	g_config.binary_opcode_file  = section.GetString("binary_opcode_file");
 	g_config.deduplicate_interrupts           = section.GetBool("deduplicate_interrupts");
 	g_config.dedup_interrupt_window_ms        = section.GetInt("dedup_interrupt_window_ms");
+	if (g_config.dedup_interrupt_window_ms < 0) {
+		g_config.dedup_interrupt_window_ms = 0;
+	}
 	g_config.deduplicate_instructions         = section.GetBool("deduplicate_instructions");
 	g_config.dedup_instruction_max_consecutive = section.GetInt("dedup_instruction_max_consecutive");
+	if (g_config.dedup_instruction_max_consecutive < 1) {
+		g_config.dedup_instruction_max_consecutive = 1;
+	}
 }
 
 static void notify_debugtrace_setting_updated([[maybe_unused]] const SectionProp& section,

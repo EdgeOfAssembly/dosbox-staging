@@ -71,6 +71,14 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 			if (s_consecutive_count > DEBUGTRACE_DeduplicateInstructionMaxConsecutive()) {
 				++s_suppressed_insn;
 				// Binary dump already done above; skip text log.
+				// Still advance the sample counter so the cadence
+				// is not affected by dedup suppression.
+				if (DEBUGTRACE_InstructionSampleRate() > 1) {
+					++s_sample_counter;
+					if (s_sample_counter >= DEBUGTRACE_InstructionSampleRate()) {
+						s_sample_counter = 0;
+					}
+				}
 				return;
 			}
 		} else {

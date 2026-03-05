@@ -202,9 +202,9 @@ void InterruptLogger_Log(const uint8_t int_num)
 	const uint8_t al_pre = reg_al;
 
 	if (DEBUGTRACE_DeduplicateInterrupts()) {
-		const uint64_t now    = DEBUGTRACE_GetElapsedMs();
-		const uint64_t window = static_cast<uint64_t>(
-		        DEBUGTRACE_DeduplicateInterruptWindowMs());
+		const uint64_t now      = DEBUGTRACE_GetElapsedMs();
+		const int      wms      = DEBUGTRACE_DeduplicateInterruptWindowMs();
+		const uint64_t window   = (wms > 0) ? static_cast<uint64_t>(wms) : 0;
 
 		const bool same_int = (int_num    == s_last_int_num &&
 		                       ah_pre     == s_last_ah      &&

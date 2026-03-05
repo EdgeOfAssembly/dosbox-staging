@@ -5,4 +5,5 @@ target_sources(libdosboxcommon PRIVATE
   file_io_logger.cpp
   video_mode_logger.cpp
   exec_logger.cpp
+  opcode_dump.cpp
 )

@@ -49,6 +49,8 @@ event is logged to `game_trace.log`.
 | `file_read_hex_dump_bytes` | `64` | Number of bytes to hex-dump after each file read.  `0` disables dumps. |
 | `instruction_sample_rate` | `1` | Log every Nth instruction (`1` = all, `10` = every tenth, etc.). |
 | `max_log_size_mb` | `0` | Maximum log file size before auto-rotation (`0` = unlimited). |
+| `binary_opcode_dump` | `false` | Write raw executed opcode bytes to a flat binary file. Independent of `trace_instructions`. |
+| `binary_opcode_file` | `opcodes.bin` | Path of the binary opcode dump file. Only used when `binary_opcode_dump = true`. |
 
 ---
 
@@ -166,3 +168,50 @@ tracing, set `logfile = /dev/shm/game_trace.log` (Linux tmpfs) or use an SSD.
   segment (SS)** value at the time of the EXEC call.  This is not the PSP
   segment of the program being executed; use a DOS debugger to correlate the
   actual PSP segment if needed.
+- **Spurious BIOS instruction suppression**: the very first instruction logged
+  after `=== FULL TRACE LOGGING ACTIVATED ===` is automatically skipped because
+  it always corresponds to a BIOS ROM instruction at `F000:xxxx` on the INT
+  21h/4Bh return path, not the first real game instruction.  The second CPU
+  cycle — which is the actual first game instruction at `CS:IP=XXXX:0100` — is
+  the first entry in the log.
+
+---
+
+## Binary Opcode Dump
+
+Setting `binary_opcode_dump = true` writes a flat binary file (`opcodes.bin` by
+default, configurable via `binary_opcode_file`) containing the first opcode byte
+of every instruction executed while tracing is active.
+
+This is **completely independent** of `trace_instructions` — all four
+combinations are supported:
+
+| `trace_instructions` | `binary_opcode_dump` | Result |
+|---|---|---|
+| `true` | `false` | Human-readable text log only (default behaviour) |
+| `false` | `true` | Binary dump only, no per-instruction text lines |
+| `true` | `true` | Both simultaneously |
+| `false` | `false` | Neither (tracing still active for interrupts/file I/O etc.) |
+
+The binary file is a raw stream of opcode bytes — one byte per instruction
+executed.  It is useful for:
+
+- **Frequency analysis**: count how often each opcode appears.
+- **Coverage mapping**: which opcodes does the program ever execute?
+- **Lightweight recording**: much smaller than the full text trace.
+
+To disassemble or analyse the file:
+
+```sh
+# Count opcode frequency
+python3 -c "
+import collections, sys
+data = open('opcodes.bin','rb').read()
+c = collections.Counter(data)
+for b,n in c.most_common(20):
+    print(f'  {b:02X}  {n:8d}')
+"
+
+# View first bytes with xxd
+xxd opcodes.bin | head -20
+```

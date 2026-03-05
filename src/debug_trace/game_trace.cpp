@@ -9,6 +9,7 @@
 #include "file_io_logger.h"
 #include "video_mode_logger.h"
 #include "exec_logger.h"
+#include "opcode_dump.h"
 
 #include "config/setup.h"
 
@@ -23,8 +24,9 @@
 // Global state
 // ---------------------------------------------------------------------------
 
-bool g_trace_enabled       = false;
-bool g_debugtrace_system_ready = false;
+bool g_trace_enabled                  = false;
+bool g_debugtrace_system_ready        = false;
+bool g_trace_skip_first_instruction   = false;
 
 namespace {
 
@@ -42,6 +44,8 @@ struct TraceConfig {
 	int         file_read_hex_dump   = 64;
 	int         instruction_sample_rate = 1;
 	int         max_log_size_mb      = 0;
+	bool        binary_opcode_dump   = false;
+	std::string binary_opcode_file   = "opcodes.bin";
 };
 
 static TraceConfig g_config;
@@ -173,13 +177,18 @@ int DEBUGTRACE_InstructionSampleRate()
 	return g_config.instruction_sample_rate;
 }
 
+bool DEBUGTRACE_BinaryOpcodeDump()
+{
+	return g_config.binary_opcode_dump;
+}
+
 // ---------------------------------------------------------------------------
 // Integration-point functions
 // ---------------------------------------------------------------------------
 
 void DEBUGTRACE_LogInstruction(const uint16_t cs_val, const uint16_t ip_val)
 {
-	if (!g_config.trace_instructions) {
+	if (!g_config.trace_instructions && !g_config.binary_opcode_dump) {
 		return;
 	}
 	InstructionLogger_Log(cs_val, ip_val);
@@ -278,6 +287,8 @@ static void init_debugtrace_settings(const SectionProp& section)
 	g_config.file_read_hex_dump  = section.GetInt("file_read_hex_dump_bytes");
 	g_config.instruction_sample_rate = section.GetInt("instruction_sample_rate");
 	g_config.max_log_size_mb     = section.GetInt("max_log_size_mb");
+	g_config.binary_opcode_dump  = section.GetBool("binary_opcode_dump");
+	g_config.binary_opcode_file  = section.GetString("binary_opcode_file");
 }
 
 static void notify_debugtrace_setting_updated([[maybe_unused]] const SectionProp& section,
@@ -353,6 +364,17 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	        "Reserved for future use.  Intended to limit the log file size in megabytes\n"
 	        "before auto-rotation, but this setting is currently not enforced and the\n"
 	        "log size is always unlimited regardless of its value.");
+
+	pbool = section->AddBool("binary_opcode_dump", OnlyAtStart, false);
+	pbool->SetHelp(
+	        "Write raw executed opcode bytes to a flat binary file.\n"
+	        "Independent of 'trace_instructions' — can be enabled with or without the text log\n"
+	        "('false' by default).");
+
+	pstring = section->AddString("binary_opcode_file", OnlyAtStart, "opcodes.bin");
+	pstring->SetHelp(
+	        "Path of the binary opcode dump file ('opcodes.bin' by default).\n"
+	        "Only used when 'binary_opcode_dump = true'.");
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +436,10 @@ void DEBUGTRACE_Init()
 	// to INT 21h/4Bh calls and activate tracing on the first EXEC.
 	g_debugtrace_system_ready = true;
 	FileIOLogger_Init();
+
+	if (g_config.binary_opcode_dump) {
+		OpcodeDump_Init(g_config.binary_opcode_file.c_str());
+	}
 }
 
 void DEBUGTRACE_Shutdown()
@@ -433,9 +459,11 @@ void DEBUGTRACE_Shutdown()
 	}
 
 	g_trace_enabled = false;
+	g_trace_skip_first_instruction = false;
 	g_debugtrace_system_ready = false;
 	s_exec_depth = 0;
 	FileIOLogger_Shutdown();
+	OpcodeDump_Shutdown();
 }
 
 // Called by ExecLogger when the first EXEC is detected (auto_trace_on_exec mode)
@@ -449,6 +477,7 @@ void DEBUGTRACE_ActivateTrace()
 	}
 	set_epoch_now();
 	g_trace_enabled = true;
+	g_trace_skip_first_instruction = true;
 }
 
 void DEBUGTRACE_OnExecDepthPush()
@@ -500,6 +529,7 @@ void DEBUGTRACE_OnProgramTerminate(const uint8_t return_code)
 		// The top-level traced program has exited — stop logging
 		s_exec_depth = 0;
 		g_trace_enabled = false;
+		g_trace_skip_first_instruction = false;
 		DEBUGTRACE_Write("[debugtrace] === TRACE LOGGING DEACTIVATED (program exited) ===");
 		// Keep g_debugtrace_system_ready=true and the log file open so
 		// the user can run the game again in the same session.

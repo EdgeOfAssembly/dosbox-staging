@@ -17,9 +17,9 @@ void OpcodeDump_Shutdown();
 //   phys_ip     : 20-bit physical address of the instruction start
 //   num_bytes   : number of opcode bytes to write (must be > 0, typically 1)
 //
-// Note: the output is a sequence of first-bytes-of-each-instruction-executed.
-// One byte per call is written (the opcode byte at phys_ip).  The consumer can
-// perform frequency analysis, coverage mapping, etc. on this raw byte stream.
+// Note: the output is a sequence of opcode bytes from each instruction executed.
+// For each call, num_bytes bytes are written starting at phys_ip.  The consumer
+// can perform frequency analysis, coverage mapping, etc. on this raw byte stream.
 void OpcodeDump_Write(uint32_t phys_ip, int num_bytes);
 
 #endif // DOSBOX_OPCODE_DUMP_H

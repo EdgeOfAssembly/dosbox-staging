@@ -40,6 +40,23 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 		return;
 	}
 
+	// Compute physical address once — used by both the binary dump and text log.
+	// Apply 20-bit real-mode address wrapping so addresses above 0xFFFFF
+	// wrap correctly (e.g. CS:IP = FFFF:FFF8 must not read past 1 MB).
+	const uint32_t phys_base = (static_cast<uint32_t>(cs_val) << 4) & 0xFFFFF;
+	const uint32_t phys_ip   = (phys_base + static_cast<uint32_t>(ip_val)) & 0xFFFFF;
+
+	// Binary opcode dump (independent of text logging and sample rate).
+	// Writes the single opcode byte at the instruction start — the output
+	// is a sequence of first-bytes-of-each-instruction-executed, useful
+	// for frequency analysis and coverage mapping.  Must run before the
+	// sample-rate check so it captures every executed instruction regardless
+	// of the text-log sampling setting.
+	if (DEBUGTRACE_BinaryOpcodeDump()) {
+		OpcodeDump_Write(phys_ip, 1);
+	}
+
+	// Sample-rate gating applies only to the text log, not the binary dump.
 	const int sample_rate = DEBUGTRACE_InstructionSampleRate();
 	if (sample_rate > 1) {
 		++s_sample_counter;
@@ -49,27 +66,12 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 		s_sample_counter = 0;
 	}
 
-	// Materialise CPU flags into reg_flags
-	FillFlags();
-
-	// Read up to 8 opcode bytes for display.
-	// Apply 20-bit real-mode address wrapping so addresses above 0xFFFFF
-	// wrap correctly (e.g. CS:IP = FFFF:FFF8 must not read past 1 MB).
-	// This logs the bytes ABOUT TO BE executed (before decode/execute).
-	const uint32_t phys_base = (static_cast<uint32_t>(cs_val) << 4) & 0xFFFFF;
-	const uint32_t phys_ip   = (phys_base + static_cast<uint32_t>(ip_val)) & 0xFFFFF;
-
-	// Binary opcode dump (independent of text logging).
-	// Writes the single opcode byte at the instruction start — the output
-	// is a sequence of first-bytes-of-each-instruction-executed, useful
-	// for frequency analysis and coverage mapping.
-	if (DEBUGTRACE_BinaryOpcodeDump()) {
-		OpcodeDump_Write(phys_ip, 1);
-	}
-
 	if (!DEBUGTRACE_TraceInstructions()) {
 		return;
 	}
+
+	// Materialise CPU flags into reg_flags (only needed for text output).
+	FillFlags();
 
 	char opcode_hex[8 * 3 + 1]; // "XX XX XX ..." + NUL
 	char* wp = opcode_hex;

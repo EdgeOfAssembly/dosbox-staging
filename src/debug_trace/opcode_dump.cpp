@@ -17,8 +17,8 @@
 //   this bitmap as the exact set of disassembly entry points.
 //
 // Both files are memory-mapped (POSIX mmap / Win32 CreateFileMapping) for
-// zero-copy, random-access writes.  On platforms where mapping is unavailable
-// the implementation falls back to pre-allocated fixed-size files with pwrite.
+// zero-copy, random-access writes.  This implementation currently requires
+// memory-mapped files and does not provide a non-mmap fallback path.
 //
 // The output is independent of the human-readable text trace log — it can be
 // enabled alone, together with the text log, or not at all.

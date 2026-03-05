@@ -244,8 +244,11 @@ pip install capstone
 python3 scripts/tools/memory_dump_solution.py opcodes.bin
 ```
 
-Without capstone the script still works, printing instruction bytes as hex
-along with a note to install capstone for mnemonics.
+Without capstone the script will still run and print instruction bytes as hex,
+but it relies on a best-effort heuristic for instruction lengths (capped at
+the x86 architectural maximum of 15 bytes per instruction) and may produce
+inaccurate instruction boundaries or statistics; install capstone for
+reliable disassembly and mnemonics.
 
 ### Manual analysis with standard tools
 
@@ -253,7 +256,7 @@ along with a note to install capstone for mnemonics.
 # Inspect the raw flat image with xxd (address N → file offset N)
 xxd opcodes.bin | head -40
 
-# Count how often each byte value appears in the executed region
+# Count how often each opcode (first byte) appears among executed instructions
 python3 -c "
 import collections
 image  = open('opcodes.bin',        'rb').read()

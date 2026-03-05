@@ -30,9 +30,13 @@ Options
 Requirements
 ------------
   Python 3.8+  — no third-party packages required.
-  The script uses a minimal built-in x86 length decoder so that it works
-  without installing capstone or any other disassembly library.  Install
-  capstone (pip install capstone) for richer mnemonics:
+  Instruction lengths are derived by decoding instruction bytes at each
+  executed address using capstone when available.  Without capstone the
+  script falls back to a best-effort heuristic that caps each instruction at
+  the x86 architectural maximum of 15 bytes; this heuristic does not perform
+  real x86 length decoding and can be inaccurate in sparsely covered regions
+  or where code and data are interleaved.  Install capstone (pip install
+  capstone) for reliable instruction length detection and mnemonics:
 
       pip install capstone
       python3 memory_dump_solution.py opcodes.bin
@@ -95,11 +99,10 @@ def disassemble_one(image: bytes, addr: int, length: int) -> str:
     """Return a disassembly string for the instruction at *addr*."""
     if _HAVE_CAPSTONE:
         chunk = bytes(image[addr:addr + length])
-        insns = list(_cs.disasm(chunk, addr, count=1))
-        if insns:
-            insn = insns[0]
-            hex_bytes = " ".join(f"{b:02X}" for b in insn.bytes)
-            return f"{hex_bytes:<24}  {insn.mnemonic} {insn.op_str}".rstrip()
+        insn = next(_cs.disasm(chunk, addr, count=1), None)  # type: ignore[call-arg]
+        if insn is not None:
+            hex_bytes = " ".join(f"{b:02X}" for b in insn.bytes)  # type: ignore[union-attr]
+            return f"{hex_bytes:<24}  {insn.mnemonic} {insn.op_str}".rstrip()  # type: ignore[union-attr]
         # capstone failed — fall through to hex dump
     return _hex_disasm(addr, image, length)
 
@@ -115,28 +118,53 @@ def iter_set_bits(bitmap: bytes) -> Iterator[int]:
             continue
         base = byte_idx * 8
         for bit in range(8):
+            addr = base + bit
+            # Clamp to the defined physical address space to avoid out-of-range
+            # accesses if the bitmap is larger than expected.
+            if addr >= PHYS_ADDR_SPACE:
+                return
             if byte_val & (1 << bit):
-                yield base + bit
+                yield addr
 
 
 # ---------------------------------------------------------------------------
-# Instruction length: derive from bitmap (distance to next set bit) or
-# clamp to the end of the address space.
+# Instruction length helpers
 # ---------------------------------------------------------------------------
 
-def build_length_table(bitmap: bytes) -> list[int]:
+def _decode_insn_length(image: bytes, addr: int) -> int:
+    """Return the length of the instruction at *addr* in *image*.
+
+    Uses capstone when available for an exact decode.  Without capstone,
+    returns a conservative fallback of min(15, remaining_bytes) — the x86
+    architectural maximum — so output is bounded but may show more bytes than
+    the actual instruction occupies.
+    """
+    # Clamp to remaining bytes and x86's architectural maximum.
+    max_len = min(15, PHYS_ADDR_SPACE - addr)
+    if max_len <= 0:
+        return 0
+
+    if _HAVE_CAPSTONE:
+        chunk = bytes(image[addr:addr + max_len])
+        try:
+            insn = next(_cs.disasm(chunk, addr, count=1), None)  # type: ignore[call-arg]
+        except Exception:
+            insn = None
+        if insn is not None:
+            size = insn.size  # type: ignore[union-attr]
+            if 0 < size <= max_len:
+                return size
+        # capstone failed for this address — fall through to conservative bound.
+
+    # Best-effort fallback: cap at max x86 instruction length.
+    return max_len
+
+
+def build_length_table(bitmap: bytes, image: bytes) -> list[int]:
     """Return a list mapping physical address → instruction length (0 if not executed)."""
     lengths = [0] * PHYS_ADDR_SPACE
-    set_addrs = sorted(iter_set_bits(bitmap))
-    for i, addr in enumerate(set_addrs):
-        if i + 1 < len(set_addrs):
-            next_addr = set_addrs[i + 1]
-            # The natural length is the gap to the next executed instruction,
-            # but cap at 15 (maximum x86 instruction length) to handle cases
-            # where the next entry belongs to a different code region.
-            lengths[addr] = min(next_addr - addr, 15)
-        else:
-            lengths[addr] = min(PHYS_ADDR_SPACE - addr, 15)
+    for addr in iter_set_bits(bitmap):
+        lengths[addr] = _decode_insn_length(image, addr)
     return lengths
 
 
@@ -164,7 +192,7 @@ def disassemble(image: bytes,
                 no_gaps: bool = False,
                 stats: bool = False) -> None:
     """Disassemble all executed instructions and write the result to *out*."""
-    lengths = build_length_table(bitmap)
+    lengths = build_length_table(bitmap, image)
     executed = sorted(iter_set_bits(bitmap))
 
     if stats:

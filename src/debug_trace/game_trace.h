@@ -26,6 +26,11 @@ extern bool g_trace_enabled;
 // g_trace_enabled becomes true (in auto_trace_on_exec mode).
 extern bool g_debugtrace_system_ready;
 
+// Set to true by DEBUGTRACE_ActivateTrace() alongside g_trace_enabled.
+// InstructionLogger_Log() consumes this flag on first call after activation
+// to skip the one BIOS-area instruction that fires before the game's own code.
+extern bool g_trace_skip_first_instruction;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -110,6 +115,7 @@ void DEBUGTRACE_Write(const char* line);
 bool DEBUGTRACE_IsInterruptExcluded(uint8_t int_num);
 
 // Accessors for per-subsystem configuration values.
+bool DEBUGTRACE_TraceInstructions();
 bool DEBUGTRACE_AutoTraceOnExec();
 // When true, tracing activation is restricted to programs started from the
 // interactive shell prompt.  Programs launched from autoexec.bat or any other
@@ -118,6 +124,9 @@ bool DEBUGTRACE_AutoTraceOnExec();
 bool DEBUGTRACE_TraceOnInteractiveExecOnly();
 int  DEBUGTRACE_FileReadHexDumpBytes();
 int  DEBUGTRACE_InstructionSampleRate();
+
+// Returns true if binary opcode dump is enabled.
+bool DEBUGTRACE_BinaryOpcodeDump();
 
 // Activate tracing (called by ExecLogger on first EXEC when auto_trace_on_exec).
 void DEBUGTRACE_ActivateTrace();

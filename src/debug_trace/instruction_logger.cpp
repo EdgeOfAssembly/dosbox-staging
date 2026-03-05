@@ -10,6 +10,7 @@
 
 #include "instruction_logger.h"
 #include "game_trace.h"
+#include "opcode_dump.h"
 
 #include "cpu/registers.h"
 #include "cpu/lazyflags.h"
@@ -31,6 +32,14 @@ static int s_sample_counter = 0;
 
 void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 {
+	// Skip the very first instruction after activation — it is always a
+	// BIOS ROM instruction at F000:xxxx on the INT 21h/4Bh return path,
+	// not the first real game instruction.
+	if (g_trace_skip_first_instruction) {
+		g_trace_skip_first_instruction = false;
+		return;
+	}
+
 	const int sample_rate = DEBUGTRACE_InstructionSampleRate();
 	if (sample_rate > 1) {
 		++s_sample_counter;
@@ -49,6 +58,19 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 	// This logs the bytes ABOUT TO BE executed (before decode/execute).
 	const uint32_t phys_base = (static_cast<uint32_t>(cs_val) << 4) & 0xFFFFF;
 	const uint32_t phys_ip   = (phys_base + static_cast<uint32_t>(ip_val)) & 0xFFFFF;
+
+	// Binary opcode dump (independent of text logging).
+	// Writes the single opcode byte at the instruction start — the output
+	// is a sequence of first-bytes-of-each-instruction-executed, useful
+	// for frequency analysis and coverage mapping.
+	if (DEBUGTRACE_BinaryOpcodeDump()) {
+		OpcodeDump_Write(phys_ip, 1);
+	}
+
+	if (!DEBUGTRACE_TraceInstructions()) {
+		return;
+	}
+
 	char opcode_hex[8 * 3 + 1]; // "XX XX XX ..." + NUL
 	char* wp = opcode_hex;
 	for (int i = 0; i < 8; ++i) {

@@ -15,6 +15,15 @@
 #include <cstring>
 
 // ---------------------------------------------------------------------------
+// Deduplication state (file-local)
+// ---------------------------------------------------------------------------
+static uint8_t  s_last_int_num     = 0xFF;
+static uint8_t  s_last_ah          = 0xFF;
+static uint8_t  s_last_al          = 0xFF;
+static uint64_t s_last_int_time    = 0;
+static uint32_t s_suppressed_count = 0;
+
+// ---------------------------------------------------------------------------
 // Human-readable descriptions for well-known interrupt/function combinations
 // ---------------------------------------------------------------------------
 
@@ -187,6 +196,44 @@ static const char* describe_interrupt(const uint8_t int_num, const uint8_t ah,
 
 void InterruptLogger_Log(const uint8_t int_num)
 {
+	// Deduplication: read ah/al BEFORE FillFlags() — they come from
+	// reg_ah/reg_al which are not affected by FillFlags().
+	const uint8_t ah_pre = reg_ah;
+	const uint8_t al_pre = reg_al;
+
+	if (DEBUGTRACE_DeduplicateInterrupts()) {
+		const uint64_t now    = DEBUGTRACE_GetElapsedMs();
+		const uint64_t window = static_cast<uint64_t>(
+		        DEBUGTRACE_DeduplicateInterruptWindowMs());
+
+		const bool same_int = (int_num    == s_last_int_num &&
+		                       ah_pre     == s_last_ah      &&
+		                       al_pre     == s_last_al);
+		const bool within_window = (now - s_last_int_time) <= window;
+
+		if (same_int && within_window) {
+			++s_suppressed_count;
+			return;
+		}
+
+		// Different interrupt or window expired — flush pending summary
+		if (s_suppressed_count > 0) {
+			char summary[128];
+			snprintf(summary, sizeof(summary),
+			         "[T+%08" PRIu64 "ms] >> [%u duplicate INT %02Xh "
+			         "AH=%02Xh AL=%02Xh calls suppressed]",
+			         now, s_suppressed_count,
+			         s_last_int_num, s_last_ah, s_last_al);
+			DEBUGTRACE_Write(summary);
+			s_suppressed_count = 0;
+		}
+
+		s_last_int_num  = int_num;
+		s_last_ah       = ah_pre;
+		s_last_al       = al_pre;
+		s_last_int_time = now;
+	}
+
 	FillFlags();
 
 	const uint8_t ah  = reg_ah;
@@ -211,4 +258,13 @@ void InterruptLogger_Log(const uint8_t int_num)
 	         SegValue(ds), SegValue(es));
 
 	DEBUGTRACE_Write(line);
+}
+
+void InterruptLogger_ResetDedup()
+{
+	s_last_int_num     = 0xFF;
+	s_last_ah          = 0xFF;
+	s_last_al          = 0xFF;
+	s_last_int_time    = 0;
+	s_suppressed_count = 0;
 }

@@ -46,6 +46,10 @@ struct TraceConfig {
 	int         max_log_size_mb      = 0;
 	bool        binary_opcode_dump   = false;
 	std::string binary_opcode_file   = "opcodes.bin";
+	bool        deduplicate_interrupts           = false;
+	int         dedup_interrupt_window_ms        = 50;
+	bool        deduplicate_instructions         = false;
+	int         dedup_instruction_max_consecutive = 3;
 };
 
 static TraceConfig g_config;
@@ -182,6 +186,26 @@ bool DEBUGTRACE_BinaryOpcodeDump()
 	return g_config.binary_opcode_dump;
 }
 
+bool DEBUGTRACE_DeduplicateInterrupts()
+{
+	return g_config.deduplicate_interrupts;
+}
+
+int DEBUGTRACE_DeduplicateInterruptWindowMs()
+{
+	return g_config.dedup_interrupt_window_ms;
+}
+
+bool DEBUGTRACE_DeduplicateInstructions()
+{
+	return g_config.deduplicate_instructions;
+}
+
+int DEBUGTRACE_DeduplicateInstructionMaxConsecutive()
+{
+	return g_config.dedup_instruction_max_consecutive;
+}
+
 // ---------------------------------------------------------------------------
 // Integration-point functions
 // ---------------------------------------------------------------------------
@@ -289,6 +313,10 @@ static void init_debugtrace_settings(const SectionProp& section)
 	g_config.max_log_size_mb     = section.GetInt("max_log_size_mb");
 	g_config.binary_opcode_dump  = section.GetBool("binary_opcode_dump");
 	g_config.binary_opcode_file  = section.GetString("binary_opcode_file");
+	g_config.deduplicate_interrupts           = section.GetBool("deduplicate_interrupts");
+	g_config.dedup_interrupt_window_ms        = section.GetInt("dedup_interrupt_window_ms");
+	g_config.deduplicate_instructions         = section.GetBool("deduplicate_instructions");
+	g_config.dedup_instruction_max_consecutive = section.GetInt("dedup_instruction_max_consecutive");
 }
 
 static void notify_debugtrace_setting_updated([[maybe_unused]] const SectionProp& section,
@@ -375,6 +403,37 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	pstring->SetHelp(
 	        "Path of the binary opcode dump file ('opcodes.bin' by default).\n"
 	        "Only used when 'binary_opcode_dump = true'.");
+
+	pbool = section->AddBool("deduplicate_interrupts", OnlyAtStart, false);
+	pbool->SetHelp(
+	        "Suppress repeated identical interrupt calls that occur within a short\n"
+	        "time window. When the same INT number + AH + AL fires more than once\n"
+	        "within 'dedup_interrupt_window_ms' milliseconds, only the first call\n"
+	        "is logged; subsequent identical calls are counted and a summary line\n"
+	        "is emitted when the pattern changes or the window expires.\n"
+	        "('false' by default).");
+
+	pint = section->AddInt("dedup_interrupt_window_ms", OnlyAtStart, 50);
+	pint->SetHelp(
+	        "Time window in milliseconds for interrupt deduplication.\n"
+	        "Identical INT/AH/AL combinations within this window after the first\n"
+	        "occurrence are suppressed. ('50' by default).");
+
+	pbool = section->AddBool("deduplicate_instructions", OnlyAtStart, false);
+	pbool->SetHelp(
+	        "Suppress repeated identical instruction entries at the same CS:IP address.\n"
+	        "When the same CS:IP is logged more than once in immediate succession\n"
+	        "(within 'dedup_instruction_max_consecutive' consecutive entries),\n"
+	        "only the first occurrence is logged; the rest are counted and a summary\n"
+	        "line is emitted when the address changes.\n"
+	        "('false' by default).");
+
+	pint = section->AddInt("dedup_instruction_max_consecutive", OnlyAtStart, 3);
+	pint->SetHelp(
+	        "Maximum number of consecutive identical CS:IP entries before deduplication\n"
+	        "kicks in. After this many identical entries in a row, further duplicates\n"
+	        "are suppressed until a different CS:IP is seen.\n"
+	        "('3' by default).");
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +521,8 @@ void DEBUGTRACE_Shutdown()
 	g_trace_skip_first_instruction = false;
 	g_debugtrace_system_ready = false;
 	s_exec_depth = 0;
+	InterruptLogger_ResetDedup();
+	InstructionLogger_ResetDedup();
 	FileIOLogger_Shutdown();
 	OpcodeDump_Shutdown();
 }
@@ -478,6 +539,8 @@ void DEBUGTRACE_ActivateTrace()
 	set_epoch_now();
 	g_trace_enabled = true;
 	g_trace_skip_first_instruction = true;
+	InterruptLogger_ResetDedup();
+	InstructionLogger_ResetDedup();
 }
 
 void DEBUGTRACE_OnExecDepthPush()

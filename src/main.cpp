@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <ios>
+#include <iostream>
 #include <memory>
 #include <signal.h>
 #include <string>
@@ -572,6 +574,12 @@ static void wait_for_pid(const int wait_pid)
 
 int main(int argc, char* argv[])
 {
+	// Decouple C++ streams from C stdio for faster std::cout/std::cin.
+	// All DOSBox output that goes through C stdio (printf, puts, fputs) is
+	// unaffected; this only speeds up any C++ stream usage in the process.
+	std::ios::sync_with_stdio(false);
+	std::cin.tie(nullptr);
+
 	// Ensure we perform SDL cleanup and restore console settings at exit
 	atexit(quit_func);
 

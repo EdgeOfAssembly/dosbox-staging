@@ -25,6 +25,10 @@ exclude_interrupts = 08,1C
 file_read_hex_dump_bytes = 64
 instruction_sample_rate = 1
 max_log_size_mb = 0
+deduplicate_interrupts = false
+dedup_interrupt_window_ms = 50
+deduplicate_instructions = false
+dedup_instruction_max_consecutive = 3
 ```
 
 Launch DOSBox Staging as normal.  As soon as the game is loaded via the DOS
@@ -51,6 +55,10 @@ event is logged to `game_trace.log`.
 | `max_log_size_mb` | `0` | Maximum log file size before auto-rotation (`0` = unlimited). |
 | `binary_opcode_dump` | `false` | Write raw executed opcode bytes to a flat binary file. Independent of `trace_instructions`. |
 | `binary_opcode_file` | `opcodes.bin` | Path of the binary opcode dump file. Only used when `binary_opcode_dump = true`. |
+| `deduplicate_interrupts` | `false` | Suppress repeated identical interrupt calls within a configurable time window (see `dedup_interrupt_window_ms`). |
+| `dedup_interrupt_window_ms` | `50` | Time window in milliseconds for interrupt deduplication. Identical INT/AH/AL combinations within this window are suppressed after the first occurrence. |
+| `deduplicate_instructions` | `false` | Suppress repeated identical instruction entries at the same CS:IP address when they appear in immediate succession (see `dedup_instruction_max_consecutive`). |
+| `dedup_instruction_max_consecutive` | `3` | Maximum number of consecutive identical CS:IP entries before deduplication kicks in. After this many identical entries in a row, further duplicates are suppressed until a different CS:IP is seen. |
 
 ---
 
@@ -215,3 +223,53 @@ for b,n in c.most_common(20):
 # View first bytes with xxd
 xxd opcodes.bin | head -20
 ```
+
+---
+
+## Deduplication / noise suppression
+
+Some DOS programs poll hardware or OS services in tight loops, generating
+thousands of identical log entries per second.  Two independent deduplication
+mechanisms can trim this noise while preserving the first occurrence and emitting
+a single summary line when the pattern breaks.
+
+### `deduplicate_interrupts` + `dedup_interrupt_window_ms`
+
+**Motivation**: games that poll INT 16h (keyboard) or INT 33h (mouse) in a
+tight loop — or that rely on INT 08h/1Ch timer ticks — generate floods of
+identical `>> INT xxh AH=xxh AL=xxh` lines.  Even with timer IRQs excluded via
+`exclude_interrupts`, a mouse-polling loop fires INT 33h/AX=0003h hundreds of
+times per video frame.
+
+When `deduplicate_interrupts = true`, the interrupt logger tracks the last
+INT number + AH + AL and the time of the first occurrence.  If the same
+combination fires again within `dedup_interrupt_window_ms` milliseconds
+(default 50 ms) it is suppressed.  When the pattern changes or the window
+expires, a summary line is emitted:
+
+```
+[T+00001234ms] >> INT 33h AH=00h AL=03h (Get Mouse Position/Button)  AX=...
+[T+00001280ms] >> [47 duplicate INT 33h AH=00h AL=03h calls suppressed]
+```
+
+### `deduplicate_instructions` + `dedup_instruction_max_consecutive`
+
+**Motivation**: tight instruction loops such as a `D1 EB` (shift) or a
+busy-wait spin loop at a fixed `CS:IP` generate enormous runs of identical
+entries.  `deduplicate_instructions = true` allows suppressing these.
+
+The instruction logger tracks the last CS:IP.  After
+`dedup_instruction_max_consecutive` identical consecutive entries (default 3),
+further duplicates are suppressed until a different CS:IP is seen.  A summary
+line is then emitted:
+
+```
+[T+00005000ms] CS:IP=1234:0010  BYTES=D1 EB ...
+[T+00005000ms] CS:IP=1234:0010  BYTES=D1 EB ...
+[T+00005000ms] CS:IP=1234:0010  BYTES=D1 EB ...
+[T+00005001ms]   [12847 duplicate CS:IP=1234:0010 instructions suppressed]
+```
+
+**Note**: the binary opcode dump (`binary_opcode_dump = true`) is **never**
+deduplicated — it always records the opcode byte of every executed instruction,
+regardless of these settings.  Only the human-readable text log is affected.

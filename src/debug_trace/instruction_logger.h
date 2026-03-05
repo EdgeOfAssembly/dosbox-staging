@@ -11,4 +11,7 @@
 // ip_val : instruction pointer at the start of the instruction
 void InstructionLogger_Log(uint16_t cs_val, uint16_t ip_val);
 
+// Reset deduplication state between trace sessions.
+void InstructionLogger_ResetDedup();
+
 #endif // DOSBOX_INSTRUCTION_LOGGER_H

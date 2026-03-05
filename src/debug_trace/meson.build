@@ -1,10 +1,12 @@
 libdebug_trace_sources = files(
     'game_trace.cpp',
+    'insn_length.cpp',
     'instruction_logger.cpp',
     'interrupt_logger.cpp',
     'file_io_logger.cpp',
     'video_mode_logger.cpp',
     'exec_logger.cpp',
+    'opcode_dump.cpp',
 )
 
 libdebug_trace = static_library(

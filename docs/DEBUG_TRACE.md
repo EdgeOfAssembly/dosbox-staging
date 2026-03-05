@@ -188,8 +188,12 @@ tracing, set `logfile = /dev/shm/game_trace.log` (Linux tmpfs) or use an SSD.
 ## Binary Opcode Dump
 
 Setting `binary_opcode_dump = true` writes a flat binary file (`opcodes.bin` by
-default, configurable via `binary_opcode_file`) containing the first opcode byte
+default, configurable via `binary_opcode_file`) containing the **complete bytes**
 of every instruction executed while tracing is active.
+
+The file is a flat, contiguous stream of instruction bytes — all bytes of each
+executed instruction are written in order, so the file is a valid 16-bit x86
+instruction stream that can be disassembled directly.
 
 This is **completely independent** of `trace_instructions` — all four
 combinations are supported:
@@ -201,17 +205,25 @@ combinations are supported:
 | `true` | `true` | Both simultaneously |
 | `false` | `false` | Neither (tracing still active for interrupts/file I/O etc.) |
 
-The binary file is a raw stream of opcode bytes — one byte per instruction
-executed.  It is useful for:
+The binary file is a raw stream of complete instruction bytes.  It is useful for:
 
-- **Frequency analysis**: count how often each opcode appears.
-- **Coverage mapping**: which opcodes does the program ever execute?
+- **Direct disassembly**: the stream is valid x86-16 and can be passed straight
+  to `ndisasm` or any flat-binary disassembler.
+- **Frequency analysis**: count how often each opcode (first byte) appears.
+- **Coverage mapping**: which instructions does the program ever execute?
 - **Lightweight recording**: much smaller than the full text trace.
+
+The instruction bytes in `opcodes.bin` correspond exactly to the `BYTES=` fields
+in `game_trace.log` — for example, an entry with `BYTES=EB 32 …` produces the
+two bytes `EB 32` in the binary file.
 
 To disassemble or analyse the file:
 
 ```sh
-# Count opcode frequency
+# Disassemble as 16-bit real-mode x86 (requires nasm / ndisasm)
+ndisasm -b16 opcodes.bin | less
+
+# Count opcode frequency (first byte of each instruction)
 python3 -c "
 import collections, sys
 data = open('opcodes.bin','rb').read()
@@ -271,5 +283,5 @@ line is then emitted:
 ```
 
 **Note**: the binary opcode dump (`binary_opcode_dump = true`) is **never**
-deduplicated — it always records the opcode byte of every executed instruction,
+deduplicated — it always records the full bytes of every executed instruction,
 regardless of these settings.  Only the human-readable text log is affected.

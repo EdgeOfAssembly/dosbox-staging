@@ -21,6 +21,8 @@
 #include "debugger/debugger.h"
 #endif
 
+#include "debug_trace/game_trace.h"
+
 #define SegBase(c)	SegPhys(c)
 #define LoadMb(off) mem_readb(off)
 #define LoadMw(off) mem_readw(off)

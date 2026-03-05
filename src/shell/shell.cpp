@@ -38,7 +38,7 @@ bool DOS_ShellIsInteractive()
 {
 	// The shell is interactive when it exists and has no batch file
 	// currently being processed (batchfiles stack is empty).
-	return first_shell && first_shell->batchfiles.empty();
+	return first_shell && !first_shell->HasBatchFile();
 }
 
 constexpr uint16_t InvalidFileHandle = DOS_FILES;

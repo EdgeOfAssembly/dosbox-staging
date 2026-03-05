@@ -24,6 +24,8 @@
 #include "debugger/debugger.h"
 #endif
 
+#include "debug_trace/game_trace.h"
+
 #if (!C_CORE_INLINE)
 #define LoadMb(off) mem_readb(off)
 #define LoadMw(off) mem_readw(off)

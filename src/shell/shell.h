@@ -117,6 +117,7 @@ public:
 	DOS_Shell& operator=(const DOS_Shell&) = delete; // prevent assignment
 	void Run() override;
 	void RunBatchFile();
+	[[nodiscard]] bool HasBatchFile() const { return !batchfiles.empty(); }
 
 	/* A load of subfunctions */
 	void ParseLine(char* line);

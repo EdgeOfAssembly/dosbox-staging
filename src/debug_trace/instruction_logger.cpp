@@ -27,6 +27,14 @@
 static int s_sample_counter = 0;
 
 // ---------------------------------------------------------------------------
+// Deduplication state (file-local)
+// ---------------------------------------------------------------------------
+static uint16_t s_last_cs           = 0xFFFF;
+static uint16_t s_last_ip           = 0xFFFF;
+static int      s_consecutive_count = 0;
+static uint32_t s_suppressed_insn   = 0;
+
+// ---------------------------------------------------------------------------
 // Public implementation
 // ---------------------------------------------------------------------------
 
@@ -54,6 +62,42 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 	// of the text-log sampling setting.
 	if (DEBUGTRACE_BinaryOpcodeDump()) {
 		OpcodeDump_Write(phys_ip, 1);
+	}
+
+	// Instruction deduplication (text log only, not binary dump).
+	if (DEBUGTRACE_TraceInstructions() && DEBUGTRACE_DeduplicateInstructions()) {
+		if (cs_val == s_last_cs && ip_val == s_last_ip) {
+			++s_consecutive_count;
+			if (s_consecutive_count > DEBUGTRACE_DeduplicateInstructionMaxConsecutive()) {
+				++s_suppressed_insn;
+				// Binary dump already done above; skip text log.
+				// Still advance the sample counter so the cadence
+				// is not affected by dedup suppression.
+				if (DEBUGTRACE_InstructionSampleRate() > 1) {
+					++s_sample_counter;
+					if (s_sample_counter >= DEBUGTRACE_InstructionSampleRate()) {
+						s_sample_counter = 0;
+					}
+				}
+				return;
+			}
+		} else {
+			// Address changed — emit suppression summary if any
+			if (s_suppressed_insn > 0) {
+				char summary[128];
+				snprintf(summary, sizeof(summary),
+				         "[T+%08" PRIu64 "ms]   [%u duplicate "
+				         "CS:IP=%04X:%04X instructions suppressed]",
+				         DEBUGTRACE_GetElapsedMs(),
+				         s_suppressed_insn,
+				         s_last_cs, s_last_ip);
+				DEBUGTRACE_Write(summary);
+				s_suppressed_insn = 0;
+			}
+			s_last_cs           = cs_val;
+			s_last_ip           = ip_val;
+			s_consecutive_count = 1;
+		}
 	}
 
 	// Sample-rate gating applies only to the text log, not the binary dump.
@@ -101,4 +145,12 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 	assert(written >= 0 && static_cast<size_t>(written) < sizeof(line));
 
 	DEBUGTRACE_Write(line);
+}
+
+void InstructionLogger_ResetDedup()
+{
+	s_last_cs           = 0xFFFF;
+	s_last_ip           = 0xFFFF;
+	s_consecutive_count = 0;
+	s_suppressed_insn   = 0;
 }

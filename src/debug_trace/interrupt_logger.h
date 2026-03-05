@@ -10,4 +10,7 @@
 // int_num : interrupt number (0–255)
 void InterruptLogger_Log(uint8_t int_num);
 
+// Reset deduplication state between trace sessions.
+void InterruptLogger_ResetDedup();
+
 #endif // DOSBOX_INTERRUPT_LOGGER_H

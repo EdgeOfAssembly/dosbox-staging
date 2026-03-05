@@ -128,6 +128,16 @@ int  DEBUGTRACE_InstructionSampleRate();
 // Returns true if binary opcode dump is enabled.
 bool DEBUGTRACE_BinaryOpcodeDump();
 
+// Returns true if interrupt deduplication is enabled.
+bool DEBUGTRACE_DeduplicateInterrupts();
+// Returns the interrupt deduplication time window in milliseconds.
+int  DEBUGTRACE_DeduplicateInterruptWindowMs();
+
+// Returns true if instruction deduplication is enabled.
+bool DEBUGTRACE_DeduplicateInstructions();
+// Returns the maximum consecutive identical CS:IP entries before deduplication.
+int  DEBUGTRACE_DeduplicateInstructionMaxConsecutive();
+
 // Activate tracing (called by ExecLogger on first EXEC when auto_trace_on_exec).
 void DEBUGTRACE_ActivateTrace();
 

@@ -55,7 +55,7 @@ event is logged to `game_trace.log`.
 | `max_log_size_mb` | `0` | Maximum log file size before auto-rotation (`0` = unlimited). |
 | `binary_opcode_dump` | `false` | Write raw executed opcode bytes to a flat binary file. Independent of `trace_instructions`. |
 | `binary_opcode_file` | `opcodes.bin` | Path of the binary opcode dump file. Only used when `binary_opcode_dump = true`. |
-| `binary_opcode_dump_game_only` | `true` | When `true`, exclude BIOS ROM area instructions (physical `0xF0000`–`0xFFFFF`) from the binary dump. Prevents BIOS interrupt handlers from polluting the dump. Set to `false` to also record BIOS code. |
+| `binary_opcode_dump_game_only` | `true` | When `true`, exclude instructions in the system BIOS ROM region (physical `0xF0000`–`0xFFFFF`) from the binary dump. Prevents BIOS interrupt handlers from polluting the dump. Note: the VGA/option ROM area (`0xC0000`–`0xEFFFF`) is not excluded by this setting. Set to `false` to also record system BIOS code. |
 | `deduplicate_interrupts` | `false` | Suppress repeated identical interrupt calls within a configurable time window (see `dedup_interrupt_window_ms`). |
 | `dedup_interrupt_window_ms` | `50` | Time window in milliseconds for interrupt deduplication. Identical INT/AH/AL combinations within this window are suppressed after the first occurrence. |
 | `deduplicate_instructions` | `false` | Suppress repeated identical instruction entries at the same CS:IP address when they appear in immediate succession (see `dedup_instruction_max_consecutive`). |
@@ -226,14 +226,18 @@ combinations are supported:
 
 Default: `true`
 
-When `true`, instructions executed in the BIOS ROM area (physical addresses
-`0xF0000`–`0xFFFFF`) are excluded from the binary dump.  This prevents
-hardware interrupt handlers such as the timer tick (INT 08h, fires 18× per
-second) and keyboard IRQ (INT 09h) from polluting the dump with BIOS code
-that is unrelated to the game under analysis.
+When `true`, instructions executed in the **system BIOS ROM region** (physical
+addresses `0xF0000`–`0xFFFFF` only) are excluded from the binary dump.  This
+prevents hardware interrupt handlers such as the timer tick (INT 08h, fires
+18× per second) and keyboard IRQ (INT 09h) from polluting the dump with BIOS
+code that is unrelated to the game under analysis.
 
-Set to `false` to record all executed code, including BIOS ROM handlers — for
-example when studying DOSBox's own BIOS implementation.
+> **Note:** The VGA BIOS / option ROM area (`0xC0000`–`0xEFFFF`) is **not**
+> excluded by this setting — only the system BIOS at the top 64 KB of the
+> address space is filtered.
+
+Set to `false` to record all executed code, including system BIOS ROM handlers
+— for example when studying DOSBox's own BIOS implementation.
 
 ### Post-processing with `memory_dump_solution.py`
 

@@ -62,9 +62,10 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 	// instruction regardless of the text-log sampling setting.
 	if (DEBUGTRACE_BinaryOpcodeDump()) {
 		// When game_only mode is active (the default), skip any instruction
-		// that executes in the BIOS ROM area (physical 0xF0000–0xFFFFF).
+		// that executes in the system BIOS ROM region (physical 0xF0000–0xFFFFF).
 		// This prevents timer (INT 08h) and keyboard (INT 09h) BIOS handlers
 		// from polluting the dump with code unrelated to the game.
+		// Note: the VGA/option ROM area (0xC0000–0xEFFFF) is not filtered here.
 		constexpr uint32_t BIOS_ROM_START = 0xF0000u;
 		const bool in_bios_rom = (phys_ip >= BIOS_ROM_START);
 		if (!in_bios_rom || !DEBUGTRACE_BinaryOpcodeDumpGameOnly()) {

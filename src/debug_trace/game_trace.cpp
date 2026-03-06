@@ -420,14 +420,15 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	pbool = section->AddBool("binary_opcode_dump_game_only", OnlyAtStart, true);
 	pbool->SetHelp(
 	        "When 'true' (default), the binary opcode dump excludes instructions\n"
-	        "executed in the system BIOS ROM region (physical addresses\n"
-	        "0xF0000-0xFFFFF only). This prevents hardware interrupt handlers\n"
-	        "(INT 08h timer, INT 09h keyboard, etc.) from polluting the dump with\n"
-	        "BIOS code that is unrelated to the game being traced.\n"
-	        "Note: the VGA/option ROM area (0xC0000-0xEFFFF) is not excluded by\n"
-	        "this setting.\n"
-	        "Set to 'false' to record all executed code including BIOS ROM handlers,\n"
-	        "which is useful for studying DOSBox's BIOS implementation.");
+	        "executed at or above physical address 0xA0000 (the upper memory area).\n"
+	        "16-bit real-mode games never execute from this region, which contains\n"
+	        "the VGA framebuffer (0xA0000-0xBFFFF), option ROMs / VGA BIOS\n"
+	        "(0xC0000-0xEFFFF), and the system BIOS (0xF0000-0xFFFFF).\n"
+	        "This prevents hardware interrupt handlers (INT 08h timer, INT 09h\n"
+	        "keyboard, etc.) from polluting the dump with ROM code unrelated to\n"
+	        "the game being traced.\n"
+	        "Set to 'false' to record all executed code including ROM handlers,\n"
+	        "which is useful for studying DOSBox's BIOS/option ROM implementation.");
 
 	pbool = section->AddBool("deduplicate_interrupts", OnlyAtStart, false);
 	pbool->SetHelp(

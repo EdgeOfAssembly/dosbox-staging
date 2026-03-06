@@ -55,6 +55,7 @@ event is logged to `game_trace.log`.
 | `max_log_size_mb` | `0` | Maximum log file size before auto-rotation (`0` = unlimited). |
 | `binary_opcode_dump` | `false` | Write raw executed opcode bytes to a flat binary file. Independent of `trace_instructions`. |
 | `binary_opcode_file` | `opcodes.bin` | Path of the binary opcode dump file. Only used when `binary_opcode_dump = true`. |
+| `binary_opcode_dump_game_only` | `true` | When `true`, exclude instructions at physical addresses `0xA0000`–`0xFFFFF` (upper memory area: VGA framebuffer, option ROMs, VGA BIOS, system BIOS) from the binary dump. 16-bit real-mode games never execute from this region. Set to `false` to also record ROM/BIOS handler code. |
 | `deduplicate_interrupts` | `false` | Suppress repeated identical interrupt calls within a configurable time window (see `dedup_interrupt_window_ms`). |
 | `dedup_interrupt_window_ms` | `50` | Time window in milliseconds for interrupt deduplication. Identical INT/AH/AL combinations within this window are suppressed after the first occurrence. |
 | `deduplicate_instructions` | `false` | Suppress repeated identical instruction entries at the same CS:IP address when they appear in immediate succession (see `dedup_instruction_max_consecutive`). |
@@ -220,6 +221,27 @@ combinations are supported:
 | `false` | `true` | Flat-image dump only, no per-instruction text lines |
 | `true` | `true` | Both simultaneously |
 | `false` | `false` | Neither (tracing still active for interrupts/file I/O etc.) |
+
+### binary_opcode_dump_game_only
+
+Default: `true`
+
+When `true`, instructions executed at or above physical address `0xA0000` (the
+**upper memory area**) are excluded from the binary dump.  16-bit real-mode
+games never execute from this region, which encompasses:
+
+| Range | Contents |
+|---|---|
+| `0xA0000`–`0xBFFFF` | VGA framebuffer |
+| `0xC0000`–`0xEFFFF` | Option ROMs / VGA BIOS |
+| `0xF0000`–`0xFFFFF` | System BIOS |
+
+This prevents hardware interrupt handlers such as the timer tick (INT 08h,
+fires 18× per second) and keyboard IRQ (INT 09h) from polluting the dump with
+ROM code that is unrelated to the game under analysis.
+
+Set to `false` to record all executed code, including ROM and BIOS handlers —
+for example when studying DOSBox's own BIOS or option ROM implementation.
 
 ### Post-processing with `memory_dump_solution.py`
 

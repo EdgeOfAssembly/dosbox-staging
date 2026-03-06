@@ -30,13 +30,7 @@ Options
 Requirements
 ------------
   Python 3.8+  — no third-party packages required.
-  Instruction lengths are derived by decoding instruction bytes at each
-  executed address using capstone when available.  Without capstone the
-  script falls back to a best-effort heuristic that caps each instruction at
-  the x86 architectural maximum of 15 bytes; this heuristic does not perform
-  real x86 length decoding and can be inaccurate in sparsely covered regions
-  or where code and data are interleaved.  Install capstone (pip install
-  capstone) for reliable instruction length detection and mnemonics:
+  Install capstone for mnemonics and accurate instruction lengths:
 
       pip install capstone
       python3 memory_dump_solution.py opcodes.bin
@@ -64,8 +58,8 @@ from typing import Iterator
 # Constants
 # ---------------------------------------------------------------------------
 
-PHYS_ADDR_SPACE = 0x100_000          # 1 MB
-BITMAP_SIZE     = PHYS_ADDR_SPACE // 8  # 128 KB
+PHYS_ADDR_SPACE = 0x100_000             # 1 MB — full 8086 physical address space
+BITMAP_SIZE     = PHYS_ADDR_SPACE // 8  # 128 KB — one bit per physical address
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +67,7 @@ BITMAP_SIZE     = PHYS_ADDR_SPACE // 8  # 128 KB
 # ---------------------------------------------------------------------------
 
 try:
-    import capstone                                      # type: ignore
+    import capstone                     # type: ignore
     _cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_16)
     _cs.detail = False
     _HAVE_CAPSTONE = True
@@ -82,86 +76,62 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Minimal fallback disassembler (hex dump only, no mnemonics)
-# ---------------------------------------------------------------------------
-
-def _hex_disasm(addr: int, data: bytes, length: int) -> str:
-    """Return a simple hex representation when capstone is unavailable."""
-    hex_bytes = " ".join(f"{b:02X}" for b in data[addr:addr + length])
-    return f"{hex_bytes:<24}  ; (install capstone for mnemonics)"
-
-
-# ---------------------------------------------------------------------------
-# Disassemble a single instruction
-# ---------------------------------------------------------------------------
-
-def disassemble_one(image: bytes, addr: int, length: int) -> str:
-    """Return a disassembly string for the instruction at *addr*."""
-    if _HAVE_CAPSTONE:
-        chunk = bytes(image[addr:addr + length])
-        insn = next(_cs.disasm(chunk, addr, count=1), None)  # type: ignore[call-arg]
-        if insn is not None:
-            hex_bytes = " ".join(f"{b:02X}" for b in insn.bytes)  # type: ignore[union-attr]
-            return f"{hex_bytes:<24}  {insn.mnemonic} {insn.op_str}".rstrip()  # type: ignore[union-attr]
-        # capstone failed — fall through to hex dump
-    return _hex_disasm(addr, image, length)
-
-
-# ---------------------------------------------------------------------------
 # Bitmap helpers
 # ---------------------------------------------------------------------------
 
 def iter_set_bits(bitmap: bytes) -> Iterator[int]:
-    """Yield every physical address whose coverage bit is set."""
+    """Yield every physical address whose coverage bit is set, in order."""
     for byte_idx, byte_val in enumerate(bitmap):
         if byte_val == 0:
             continue
         base = byte_idx * 8
         for bit in range(8):
-            addr = base + bit
-            # Clamp to the defined physical address space to avoid out-of-range
-            # accesses if the bitmap is larger than expected.
-            if addr >= PHYS_ADDR_SPACE:
-                return
             if byte_val & (1 << bit):
+                addr = base + bit
+                if addr >= PHYS_ADDR_SPACE:
+                    return
                 yield addr
 
 
 # ---------------------------------------------------------------------------
-# Instruction length helpers
+# Instruction length detection
 # ---------------------------------------------------------------------------
 
 def _decode_insn_length(image: bytes, addr: int) -> int:
-    """Return the length of the instruction at *addr* in *image*.
+    """Return the byte-length of the instruction at *addr*.
 
-    Uses capstone when available for an exact decode.  Without capstone,
-    returns a conservative fallback of min(15, remaining_bytes) — the x86
-    architectural maximum — so output is bounded but may show more bytes than
-    the actual instruction occupies.
+    Always gives Capstone the full 15-byte window so that multi-byte
+    instructions (e.g. 'FE /r', 'FF /r', any ModRM opcode) are decoded
+    correctly even when only the first byte has a coverage-bitmap bit.
+
+    Falls back to 1 on any decode failure so the caller always advances.
     """
-    # Clamp to remaining bytes and x86's architectural maximum.
     max_len = min(15, PHYS_ADDR_SPACE - addr)
     if max_len <= 0:
-        return 0
+        return 1
 
     if _HAVE_CAPSTONE:
-        chunk = bytes(image[addr:addr + max_len])
+        chunk = bytes(image[addr : addr + max_len])
         try:
-            insn = next(_cs.disasm(chunk, addr, count=1), None)  # type: ignore[call-arg]
+            insn = next(_cs.disasm(chunk, addr, count=1), None)
         except Exception:
             insn = None
         if insn is not None:
-            size = insn.size  # type: ignore[union-attr]
+            size = insn.size
             if 0 < size <= max_len:
                 return size
-        # capstone failed for this address — fall through to conservative bound.
+        # Truly undecodable — treat as a single data byte.
+        return 1
 
-    # Best-effort fallback: cap at max x86 instruction length.
+    # No Capstone: use the architectural maximum as a conservative bound.
     return max_len
 
 
 def build_length_table(bitmap: bytes, image: bytes) -> list[int]:
-    """Return a list mapping physical address → instruction length (0 if not executed)."""
+    """Return a list[PHYS_ADDR_SPACE] mapping address → instruction length.
+
+    Unexecuted addresses have length 0.
+    """
     lengths = [0] * PHYS_ADDR_SPACE
     for addr in iter_set_bits(bitmap):
         lengths[addr] = _decode_insn_length(image, addr)
@@ -169,13 +139,14 @@ def build_length_table(bitmap: bytes, image: bytes) -> list[int]:
 
 
 # ---------------------------------------------------------------------------
-# Segment:offset formatting (seg * 16 + off = phys)
+# Segment:offset formatting
 # ---------------------------------------------------------------------------
 
 def phys_to_seg_off(phys: int) -> str:
-    """Format a 20-bit physical address as SSSS:OOOO (canonical min-offset form).
+    """Return 'SSSS:OOOO' for a 20-bit physical address.
 
-    Uses seg = phys >> 4, off = phys & 0xF, so seg * 16 + off == phys exactly.
+    Normalised paragraph-aligned form: seg = phys >> 4, off = phys & 0xF,
+    so seg * 16 + off == phys exactly.
     """
     seg = (phys >> 4) & 0xFFFF
     off = phys & 0xF
@@ -183,23 +154,67 @@ def phys_to_seg_off(phys: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Single-instruction disassembly
+# ---------------------------------------------------------------------------
+
+def disassemble_one(image: bytes, addr: int) -> str:
+    """Return a formatted disassembly string for the instruction at *addr*.
+
+    Always passes a full 15-byte window to Capstone so that instructions
+    whose operand bytes (ModRM, SIB, displacement, immediate) have no
+    coverage-bitmap bit of their own are still decoded correctly.
+
+    Return format when Capstone succeeds:
+        'B8 00 00             mov ax, 0x0'
+
+    Return format when Capstone cannot decode the byte:
+        'FE                   db 0xfe  ; undecodable'
+
+    Return format without Capstone installed:
+        'B8 00 00             ; (install capstone for mnemonics)'
+    """
+    max_len = min(15, PHYS_ADDR_SPACE - addr)
+
+    if _HAVE_CAPSTONE:
+        chunk = bytes(image[addr : addr + max_len])
+        try:
+            insn = next(_cs.disasm(chunk, addr, count=1), None)
+        except Exception:
+            insn = None
+
+        if insn is not None:
+            hex_bytes = " ".join(f"{b:02X}" for b in insn.bytes)
+            return f"{hex_bytes:<24}  {insn.mnemonic} {insn.op_str}".rstrip()
+
+        # Capstone could not decode — emit as a single db pseudo-instruction.
+        raw = image[addr]
+        return f"{raw:02X}                        db 0x{raw:02x}  ; undecodable"
+
+    # Capstone not installed — raw hex dump only.
+    hex_bytes = " ".join(f"{b:02X}" for b in image[addr : addr + max_len])
+    return f"{hex_bytes:<24}  ; (install capstone for mnemonics)"
+
+
+# ---------------------------------------------------------------------------
 # Main disassembly loop
 # ---------------------------------------------------------------------------
 
-def disassemble(image: bytes,
-                bitmap: bytes,
-                out,
-                no_gaps: bool = False,
-                stats: bool = False) -> None:
+def disassemble(
+    image: bytes,
+    bitmap: bytes,
+    out,
+    no_gaps: bool = False,
+    stats: bool = False,
+) -> None:
     """Disassemble all executed instructions and write the result to *out*."""
-    lengths = build_length_table(bitmap, image)
+    lengths  = build_length_table(bitmap, image)
     executed = sorted(iter_set_bits(bitmap))
 
     if stats:
-        total_bytes_executed = sum(lengths[a] for a in executed)
+        total_bytes  = sum(lengths[a] for a in executed)
         coverage_pct = len(executed) / PHYS_ADDR_SPACE * 100.0
-        print(f"[stats] Executed instruction starts : {len(executed):,}", file=sys.stderr)
-        print(f"[stats] Executed bytes              : {total_bytes_executed:,}", file=sys.stderr)
+        print(f"[stats] Executed instruction starts : {len(executed):,}",   file=sys.stderr)
+        print(f"[stats] Executed bytes              : {total_bytes:,}",     file=sys.stderr)
         print(f"[stats] Address-space coverage      : {coverage_pct:.4f}%", file=sys.stderr)
 
     if not executed:
@@ -210,17 +225,15 @@ def disassemble(image: bytes,
     for addr in executed:
         length = lengths[addr]
         if length == 0:
-            # Should not happen, but be safe
-            continue
+            continue  # should not happen
 
         if not no_gaps and prev_end >= 0 and addr > prev_end:
             gap = addr - prev_end
-            print(f"; --- gap: {gap} byte(s) --- ", file=out)
+            print(f"; --- gap: {gap} byte(s) ---", file=out)
 
-        seg_off  = phys_to_seg_off(addr)
-        disasm   = disassemble_one(image, addr, length)
-        hex_addr = f"{addr:05X}"
-        print(f"{hex_addr}  ({seg_off})  {disasm}", file=out)
+        seg_off = phys_to_seg_off(addr)
+        disasm  = disassemble_one(image, addr)
+        print(f"{addr:05X}  ({seg_off})  {disasm}", file=out)
 
         prev_end = addr + length
 
@@ -235,19 +248,30 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("image", help="Path to the flat image file (e.g. opcodes.bin)")
-    parser.add_argument("-o", "--output", metavar="FILE",
-                        help="Write output to FILE instead of stdout")
-    parser.add_argument("--no-gaps", action="store_true",
-                        help="Omit gap comments between non-contiguous addresses")
-    parser.add_argument("--stats", action="store_true",
-                        help="Print coverage statistics to stderr")
+    parser.add_argument(
+        "image",
+        help="Path to the 1 MB flat image file (e.g. opcodes.bin)",
+    )
+    parser.add_argument(
+        "-o", "--output",
+        metavar="FILE",
+        help="Write output to FILE instead of stdout",
+    )
+    parser.add_argument(
+        "--no-gaps",
+        action="store_true",
+        help="Omit gap comments between non-contiguous addresses",
+    )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Print coverage statistics to stderr",
+    )
     args = parser.parse_args()
 
     image_path  = args.image
     bitmap_path = image_path + ".bitmap"
 
-    # Validate
     if not os.path.exists(image_path):
         print(f"error: image file not found: {image_path}", file=sys.stderr)
         return 1
@@ -260,18 +284,22 @@ def main() -> int:
     bitmap_size = os.path.getsize(bitmap_path)
 
     if image_size != PHYS_ADDR_SPACE:
-        print(f"warning: image size {image_size} != expected {PHYS_ADDR_SPACE} bytes",
-              file=sys.stderr)
+        print(
+            f"warning: image size {image_size} != expected {PHYS_ADDR_SPACE} (1 MB)",
+            file=sys.stderr,
+        )
     if bitmap_size != BITMAP_SIZE:
-        print(f"warning: bitmap size {bitmap_size} != expected {BITMAP_SIZE} bytes",
-              file=sys.stderr)
+        print(
+            f"warning: bitmap size {bitmap_size} != expected {BITMAP_SIZE} (128 KB)",
+            file=sys.stderr,
+        )
 
     with open(image_path,  "rb") as f:
         image  = f.read()
     with open(bitmap_path, "rb") as f:
         bitmap = f.read()
 
-    # Pad to expected size if truncated (shouldn't happen with a correct dump)
+    # Pad to expected sizes in case of a truncated file.
     if len(image)  < PHYS_ADDR_SPACE:
         image  = image  + bytes(PHYS_ADDR_SPACE - len(image))
     if len(bitmap) < BITMAP_SIZE:
@@ -279,7 +307,8 @@ def main() -> int:
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as out:
-            disassemble(image, bitmap, out, no_gaps=args.no_gaps, stats=args.stats)
+            disassemble(image, bitmap, out,
+                        no_gaps=args.no_gaps, stats=args.stats)
     else:
         disassemble(image, bitmap, sys.stdout,
                     no_gaps=args.no_gaps, stats=args.stats)

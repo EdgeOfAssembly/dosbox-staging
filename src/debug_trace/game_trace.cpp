@@ -46,6 +46,7 @@ struct TraceConfig {
 	int         max_log_size_mb      = 0;
 	bool        binary_opcode_dump   = false;
 	std::string binary_opcode_file   = "opcodes.bin";
+	bool        binary_opcode_dump_game_only = true;
 	bool        deduplicate_interrupts           = false;
 	int         dedup_interrupt_window_ms        = 50;
 	bool        deduplicate_instructions         = false;
@@ -186,6 +187,11 @@ bool DEBUGTRACE_BinaryOpcodeDump()
 	return g_config.binary_opcode_dump;
 }
 
+bool DEBUGTRACE_BinaryOpcodeDumpGameOnly()
+{
+	return g_config.binary_opcode_dump_game_only;
+}
+
 bool DEBUGTRACE_DeduplicateInterrupts()
 {
 	return g_config.deduplicate_interrupts;
@@ -313,6 +319,7 @@ static void init_debugtrace_settings(const SectionProp& section)
 	g_config.max_log_size_mb     = section.GetInt("max_log_size_mb");
 	g_config.binary_opcode_dump  = section.GetBool("binary_opcode_dump");
 	g_config.binary_opcode_file  = section.GetString("binary_opcode_file");
+	g_config.binary_opcode_dump_game_only = section.GetBool("binary_opcode_dump_game_only");
 	g_config.deduplicate_interrupts           = section.GetBool("deduplicate_interrupts");
 	g_config.dedup_interrupt_window_ms        = section.GetInt("dedup_interrupt_window_ms");
 	if (g_config.dedup_interrupt_window_ms < 0) {
@@ -409,6 +416,16 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	pstring->SetHelp(
 	        "Path of the binary opcode dump file ('opcodes.bin' by default).\n"
 	        "Only used when 'binary_opcode_dump = true'.");
+
+	pbool = section->AddBool("binary_opcode_dump_game_only", OnlyAtStart, true);
+	pbool->SetHelp(
+	        "When 'true' (default), the binary opcode dump excludes instructions\n"
+	        "executed in the BIOS ROM area (physical addresses 0xF0000-0xFFFFF).\n"
+	        "This prevents hardware interrupt handlers (INT 08h timer, INT 09h\n"
+	        "keyboard, etc.) from polluting the dump with BIOS code that is\n"
+	        "unrelated to the game being traced.\n"
+	        "Set to 'false' to record all executed code including BIOS ROM handlers,\n"
+	        "which is useful for studying DOSBox's BIOS implementation.");
 
 	pbool = section->AddBool("deduplicate_interrupts", OnlyAtStart, false);
 	pbool->SetHelp(

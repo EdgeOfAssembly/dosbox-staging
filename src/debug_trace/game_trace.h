@@ -128,6 +128,9 @@ int  DEBUGTRACE_InstructionSampleRate();
 // Returns true if binary opcode dump is enabled.
 bool DEBUGTRACE_BinaryOpcodeDump();
 
+// Returns true if the binary opcode dump should skip BIOS ROM area instructions.
+bool DEBUGTRACE_BinaryOpcodeDumpGameOnly();
+
 // Returns true if interrupt deduplication is enabled.
 bool DEBUGTRACE_DeduplicateInterrupts();
 // Returns the interrupt deduplication time window in milliseconds.

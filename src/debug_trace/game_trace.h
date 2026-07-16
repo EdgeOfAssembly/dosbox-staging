@@ -105,6 +105,19 @@ void DEBUGTRACE_LogExec(const char* filename, const char* cmdline);
 void DEBUGTRACE_LogVideoModeSwitch(uint16_t old_mode, uint16_t new_mode);
 
 // ---------------------------------------------------------------------------
+// FCB (File Control Block) logging — INT 21h AH=0Fh/10h/14h/16h/27h
+// ---------------------------------------------------------------------------
+
+void DEBUGTRACE_LogFcbOpen(uint16_t seg, uint16_t off, uint8_t al_result);
+void DEBUGTRACE_LogFcbCreate(uint16_t seg, uint16_t off, uint8_t al_result);
+void DEBUGTRACE_LogFcbClose(uint16_t seg, uint16_t off, uint8_t al_result);
+void DEBUGTRACE_LogFcbRead(uint16_t seg, uint16_t off, uint8_t al_result,
+                           uint32_t dta_phys, uint16_t rec_size);
+void DEBUGTRACE_LogFcbBlockRead(uint16_t seg, uint16_t off, uint8_t al_result,
+                                uint16_t recs_requested, uint16_t recs_actual,
+                                uint32_t dta_phys, uint16_t rec_size);
+
+// ---------------------------------------------------------------------------
 // Internal helpers used by sub-loggers (instruction, interrupt, file I/O, etc.)
 // ---------------------------------------------------------------------------
 

@@ -637,6 +637,9 @@ static Bitu DOS_21Handler(void) {
 		}else{
 			reg_al=0xff;
 		}
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogFcbOpen(SegValue(ds), reg_dx, reg_al);
+		}
 		LOG(LOG_FCB,LOG_NORMAL)("DOS:0x0f FCB-fileopen used, result:al=%d",reg_al);
 		break;
 	case 0x10:		/* Close File using FCB */
@@ -644,6 +647,9 @@ static Bitu DOS_21Handler(void) {
 			reg_al=0;
 		}else{
 			reg_al=0xff;
+		}
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogFcbClose(SegValue(ds), reg_dx, reg_al);
 		}
 		LOG(LOG_FCB,LOG_NORMAL)("DOS:0x10 FCB-fileclose used, result:al=%d",reg_al);
 		break;
@@ -664,6 +670,14 @@ static Bitu DOS_21Handler(void) {
 		break;
 	case 0x14:		/* Sequential read from FCB */
 		reg_al = DOS_FCBRead(SegValue(ds),reg_dx,0);
+		if (g_trace_enabled) {
+			DOS_FCB fcb_tr(SegValue(ds), reg_dx);
+			uint8_t fh = 0xff;
+			uint16_t rsz = 0;
+			fcb_tr.GetSeqData(fh, rsz);
+			DEBUGTRACE_LogFcbRead(SegValue(ds), reg_dx, reg_al,
+			                      RealToPhysical(dos.dta()), rsz);
+		}
 		LOG(LOG_FCB,LOG_NORMAL)("DOS:0x14 FCB-Read used, result:al=%d",reg_al);
 		break;
 	case 0x15:		/* Sequential write to FCB */
@@ -673,6 +687,9 @@ static Bitu DOS_21Handler(void) {
 	case 0x16:		/* Create or truncate file using FCB */
 		if (DOS_FCBCreate(SegValue(ds),reg_dx)) reg_al = 0x00;
 		else reg_al = 0xFF;
+		if (g_trace_enabled) {
+			DEBUGTRACE_LogFcbCreate(SegValue(ds), reg_dx, reg_al);
+		}
 		LOG(LOG_FCB,LOG_NORMAL)("DOS:0x16 FCB-Create used, result:al=%d",reg_al);
 		break;
 	case 0x17:		/* Rename file using FCB */		
@@ -707,7 +724,19 @@ static Bitu DOS_21Handler(void) {
 		DOS_FCBSetRandomRecord(SegValue(ds),reg_dx);
 		break;
 	case 0x27:		/* Random block read from FCB */
-		reg_al = DOS_FCBRandomRead(SegValue(ds),reg_dx,&reg_cx,false);
+		{
+			const uint16_t recs_req = reg_cx;
+			reg_al = DOS_FCBRandomRead(SegValue(ds),reg_dx,&reg_cx,false);
+			if (g_trace_enabled) {
+				DOS_FCB fcb_tr(SegValue(ds), reg_dx);
+				uint8_t fh = 0xff;
+				uint16_t rsz = 0;
+				fcb_tr.GetSeqData(fh, rsz);
+				DEBUGTRACE_LogFcbBlockRead(SegValue(ds), reg_dx, reg_al,
+				                           recs_req, reg_cx,
+				                           RealToPhysical(dos.dta()), rsz);
+			}
+		}
 		LOG(LOG_FCB,LOG_NORMAL)("DOS:0x27 FCB-Random(block) read used, result:al=%d",reg_al);
 		break;
 	case 0x28:		/* Random Block write to FCB */

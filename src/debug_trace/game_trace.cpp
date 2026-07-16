@@ -290,6 +290,57 @@ void DEBUGTRACE_LogExec(const char* filename, const char* cmdline)
 	ExecLogger_Log(filename, cmdline);
 }
 
+void DEBUGTRACE_LogFcbOpen(const uint16_t seg, const uint16_t off,
+                           const uint8_t al_result)
+{
+	if (!g_config.trace_file_io) {
+		return;
+	}
+	FileIOLogger_LogFcbOpen(seg, off, al_result);
+}
+
+void DEBUGTRACE_LogFcbCreate(const uint16_t seg, const uint16_t off,
+                             const uint8_t al_result)
+{
+	if (!g_config.trace_file_io) {
+		return;
+	}
+	FileIOLogger_LogFcbCreate(seg, off, al_result);
+}
+
+void DEBUGTRACE_LogFcbClose(const uint16_t seg, const uint16_t off,
+                            const uint8_t al_result)
+{
+	if (!g_config.trace_file_io) {
+		return;
+	}
+	FileIOLogger_LogFcbClose(seg, off, al_result);
+}
+
+void DEBUGTRACE_LogFcbRead(const uint16_t seg, const uint16_t off,
+                           const uint8_t al_result, const uint32_t dta_phys,
+                           const uint16_t rec_size)
+{
+	if (!g_config.trace_file_io) {
+		return;
+	}
+	FileIOLogger_LogFcbRead(seg, off, al_result, dta_phys, rec_size);
+}
+
+void DEBUGTRACE_LogFcbBlockRead(const uint16_t seg, const uint16_t off,
+                                const uint8_t al_result,
+                                const uint16_t recs_requested,
+                                const uint16_t recs_actual,
+                                const uint32_t dta_phys,
+                                const uint16_t rec_size)
+{
+	if (!g_config.trace_file_io) {
+		return;
+	}
+	FileIOLogger_LogFcbBlockRead(seg, off, al_result, recs_requested,
+	                             recs_actual, dta_phys, rec_size);
+}
+
 void DEBUGTRACE_LogVideoModeSwitch(const uint16_t old_mode,
                                     const uint16_t new_mode)
 {

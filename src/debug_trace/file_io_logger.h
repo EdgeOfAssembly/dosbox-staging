@@ -35,4 +35,32 @@ void FileIOLogger_LogReadPost(uint16_t handle,
                                uint16_t actual_bytes,
                                uint32_t buf_phys);
 
+// ---------------------------------------------------------------------------
+// FCB (File Control Block) logging — DOS 1.x style I/O used by many 1980s games
+// ---------------------------------------------------------------------------
+
+// Log INT 21h/AH=0Fh (FCB Open) after the call.
+//   seg/off — DS:DX of the FCB
+//   al_result — AL after call (00 = success, FF = fail)
+void FileIOLogger_LogFcbOpen(uint16_t seg, uint16_t off, uint8_t al_result);
+
+// Log INT 21h/AH=16h (FCB Create) after the call.
+void FileIOLogger_LogFcbCreate(uint16_t seg, uint16_t off, uint8_t al_result);
+
+// Log INT 21h/AH=10h (FCB Close) after the call.
+void FileIOLogger_LogFcbClose(uint16_t seg, uint16_t off, uint8_t al_result);
+
+// Log INT 21h/AH=14h (sequential FCB read) after the call.
+//   al_result — AL (0 success, 1 EOF, 2 DTA too small, 3 partial)
+//   dta_phys  — physical address of the DTA (data landed here)
+//   rec_size  — record size used for the read (0 if unknown)
+void FileIOLogger_LogFcbRead(uint16_t seg, uint16_t off, uint8_t al_result,
+                             uint32_t dta_phys, uint16_t rec_size);
+
+// Log INT 21h/AH=27h (random block FCB read) after the call.
+//   recs_requested / recs_actual — CX before/after (AH=27 updates CX)
+void FileIOLogger_LogFcbBlockRead(uint16_t seg, uint16_t off, uint8_t al_result,
+                                  uint16_t recs_requested, uint16_t recs_actual,
+                                  uint32_t dta_phys, uint16_t rec_size);
+
 #endif // DOSBOX_FILE_IO_LOGGER_H

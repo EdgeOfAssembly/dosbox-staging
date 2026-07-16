@@ -7,7 +7,7 @@
 #include "file_io_logger.h"
 #include "game_trace.h"
 
-#include "dos/dos.h"
+#include "dos/dos.h" // DOS_FCB, DOS_FCBNAME
 #include "hardware/memory.h"
 
 #include <algorithm>
@@ -22,6 +22,9 @@
 // ---------------------------------------------------------------------------
 
 static std::unordered_map<uint16_t, std::string> s_handle_map;
+
+// Open FCB identity (seg:off packed) → shortname for subsequent reads.
+static std::unordered_map<uint32_t, std::string> s_fcb_map;
 
 // ---------------------------------------------------------------------------
 // Pending read state (handle, ds_seg, dx_off saved across the DOS call)
@@ -69,12 +72,14 @@ static void hex_dump(const uint8_t* data, int len, char* out, int out_size)
 void FileIOLogger_Init()
 {
 	s_handle_map.clear();
+	s_fcb_map.clear();
 	s_pending_read.active = false;
 }
 
 void FileIOLogger_Shutdown()
 {
 	s_handle_map.clear();
+	s_fcb_map.clear();
 	s_pending_read.active = false;
 }
 
@@ -207,4 +212,219 @@ void FileIOLogger_LogReadPost(const uint16_t handle,
 		         (int)sizeof(hex_line) - prefix_len);
 	}
 	DEBUGTRACE_Write(hex_line);
+}
+
+// ---------------------------------------------------------------------------
+// FCB helpers
+// ---------------------------------------------------------------------------
+
+// Linear key for DS:DX FCB identity in maps (seg and off are 16-bit).
+static uint32_t fcb_key(const uint16_t seg, const uint16_t off)
+{
+	return (static_cast<uint32_t>(seg) << 16) | off;
+}
+
+// Read FCB 8.3 name from guest memory into out (e.g. "A:LA.MAP").
+// Trims space padding via DOS_FCB::GetName.
+static void format_fcb_name(const uint16_t seg, const uint16_t off,
+                            char* out, const size_t out_sz)
+{
+	out[0] = '\0';
+	if (out_sz < 16) {
+		return;
+	}
+	// Prefer DOS_FCB helper for extended-FCB correctness.
+	DOS_FCB fcb(seg, off);
+	char raw[DOS_FCBNAME];
+	fcb.GetName(raw); // "A:FILENAME.EXT" with space padding
+
+	// Collapse spaces: A:LA      .MAP -> A:LA.MAP  (or drop drive if desired)
+	// GetName format: [0]=drive letter, [1]=':', [2..9]=name, [10]='.', [11..13]=ext
+	char name[9] = {};
+	char ext[4]  = {};
+	int ni = 0;
+	for (int i = 2; i < 10 && ni < 8; ++i) {
+		if (raw[i] != ' ' && raw[i] != '\0') {
+			name[ni++] = raw[i];
+		}
+	}
+	name[ni] = '\0';
+	int ei = 0;
+	for (int i = 11; i < 14 && ei < 3; ++i) {
+		if (raw[i] != ' ' && raw[i] != '\0') {
+			ext[ei++] = raw[i];
+		}
+	}
+	ext[ei] = '\0';
+
+	if (ext[0]) {
+		snprintf(out, out_sz, "%c:%s.%s", raw[0], name, ext);
+	} else {
+		snprintf(out, out_sz, "%c:%s", raw[0], name);
+	}
+}
+
+static const char* fcb_result_str(const uint8_t al)
+{
+	switch (al) {
+	case 0x00: return "ok";
+	case 0x01: return "EOF";
+	case 0x02: return "DTA-too-small";
+	case 0x03: return "partial";
+	case 0xFF: return "fail";
+	default:   return "other";
+	}
+}
+
+static void fcb_hex_dump_dta(const uint32_t dta_phys, const uint16_t nbytes)
+{
+	const int dump_bytes = std::min<int>(
+	        DEBUGTRACE_FileReadHexDumpBytes(),
+	        static_cast<int>(nbytes));
+	if (dump_bytes <= 0 || dta_phys == 0) {
+		return;
+	}
+	uint8_t buf[512];
+	const int to_read = std::min(dump_bytes, (int)sizeof(buf));
+	for (int i = 0; i < to_read; ++i) {
+		buf[i] = mem_readb(dta_phys + static_cast<uint32_t>(i));
+	}
+	char hex_line[512 * 3 + 80];
+	const int prefix_len = snprintf(hex_line, sizeof(hex_line),
+	         "[T+%08" PRIu64 "ms] FCB DATA [first %d bytes]: ",
+	         DEBUGTRACE_GetElapsedMs(),
+	         to_read);
+	if (prefix_len >= 0 && prefix_len < (int)sizeof(hex_line)) {
+		hex_dump(buf, to_read, hex_line + prefix_len,
+		         (int)sizeof(hex_line) - prefix_len);
+	}
+	DEBUGTRACE_Write(hex_line);
+}
+
+void FileIOLogger_LogFcbOpen(const uint16_t seg, const uint16_t off,
+                             const uint8_t al_result)
+{
+	char name[32];
+	format_fcb_name(seg, off, name, sizeof(name));
+	if (al_result == 0x00) {
+		s_fcb_map[fcb_key(seg, off)] = name;
+	}
+	char line[320];
+	snprintf(line, sizeof(line),
+	         "[T+%08" PRIu64 "ms] FCB OPEN: \"%s\" FCB=%04X:%04X result=%s (AL=0x%02X)",
+	         DEBUGTRACE_GetElapsedMs(),
+	         name,
+	         seg,
+	         off,
+	         fcb_result_str(al_result),
+	         al_result);
+	DEBUGTRACE_Write(line);
+}
+
+void FileIOLogger_LogFcbCreate(const uint16_t seg, const uint16_t off,
+                               const uint8_t al_result)
+{
+	char name[32];
+	format_fcb_name(seg, off, name, sizeof(name));
+	if (al_result == 0x00) {
+		s_fcb_map[fcb_key(seg, off)] = name;
+	}
+	char line[320];
+	snprintf(line, sizeof(line),
+	         "[T+%08" PRIu64 "ms] FCB CREATE: \"%s\" FCB=%04X:%04X result=%s (AL=0x%02X)",
+	         DEBUGTRACE_GetElapsedMs(),
+	         name,
+	         seg,
+	         off,
+	         fcb_result_str(al_result),
+	         al_result);
+	DEBUGTRACE_Write(line);
+}
+
+void FileIOLogger_LogFcbClose(const uint16_t seg, const uint16_t off,
+                              const uint8_t al_result)
+{
+	char name[32];
+	format_fcb_name(seg, off, name, sizeof(name));
+	const uint32_t key = fcb_key(seg, off);
+	auto it = s_fcb_map.find(key);
+	const char* shown = (it != s_fcb_map.end()) ? it->second.c_str() : name;
+	char line[320];
+	snprintf(line, sizeof(line),
+	         "[T+%08" PRIu64 "ms] FCB CLOSE: \"%s\" FCB=%04X:%04X result=%s (AL=0x%02X)",
+	         DEBUGTRACE_GetElapsedMs(),
+	         shown,
+	         seg,
+	         off,
+	         fcb_result_str(al_result),
+	         al_result);
+	DEBUGTRACE_Write(line);
+	s_fcb_map.erase(key);
+}
+
+void FileIOLogger_LogFcbRead(const uint16_t seg, const uint16_t off,
+                             const uint8_t al_result, const uint32_t dta_phys,
+                             const uint16_t rec_size)
+{
+	char name[32];
+	format_fcb_name(seg, off, name, sizeof(name));
+	const uint32_t key = fcb_key(seg, off);
+	auto it = s_fcb_map.find(key);
+	const char* shown = (it != s_fcb_map.end()) ? it->second.c_str() : name;
+
+	char line[360];
+	snprintf(line, sizeof(line),
+	         "[T+%08" PRIu64 "ms] FCB READ: \"%s\" FCB=%04X:%04X "
+	         "recsize=%u result=%s (AL=0x%02X) DTA_phys=%05X",
+	         DEBUGTRACE_GetElapsedMs(),
+	         shown,
+	         seg,
+	         off,
+	         rec_size,
+	         fcb_result_str(al_result),
+	         al_result,
+	         dta_phys);
+	DEBUGTRACE_Write(line);
+
+	if (al_result == 0x00 || al_result == 0x03) {
+		const uint16_t nbytes = rec_size ? rec_size : 128;
+		fcb_hex_dump_dta(dta_phys, nbytes);
+	}
+}
+
+void FileIOLogger_LogFcbBlockRead(const uint16_t seg, const uint16_t off,
+                                  const uint8_t al_result,
+                                  const uint16_t recs_requested,
+                                  const uint16_t recs_actual,
+                                  const uint32_t dta_phys,
+                                  const uint16_t rec_size)
+{
+	char name[32];
+	format_fcb_name(seg, off, name, sizeof(name));
+	const uint32_t key = fcb_key(seg, off);
+	auto it = s_fcb_map.find(key);
+	const char* shown = (it != s_fcb_map.end()) ? it->second.c_str() : name;
+
+	char line[400];
+	snprintf(line, sizeof(line),
+	         "[T+%08" PRIu64 "ms] FCB BLOCK-READ: \"%s\" FCB=%04X:%04X "
+	         "recs=%u/%u recsize=%u result=%s (AL=0x%02X) DTA_phys=%05X",
+	         DEBUGTRACE_GetElapsedMs(),
+	         shown,
+	         seg,
+	         off,
+	         recs_actual,
+	         recs_requested,
+	         rec_size,
+	         fcb_result_str(al_result),
+	         al_result,
+	         dta_phys);
+	DEBUGTRACE_Write(line);
+
+	if ((al_result == 0x00 || al_result == 0x03) && recs_actual > 0) {
+		const uint32_t total = static_cast<uint32_t>(recs_actual) *
+		                       (rec_size ? rec_size : 128);
+		fcb_hex_dump_dta(dta_phys,
+		                 static_cast<uint16_t>(std::min(total, 0xFFFFu)));
+	}
 }

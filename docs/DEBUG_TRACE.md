@@ -98,6 +98,24 @@ INT 16h (keyboard), INT 21h (DOS), and INT 33h (mouse).
 The system tracks open handles (INT 21h/AH=3Ch create, AH=3Dh open, AH=3Eh
 close) so filenames are always shown alongside their handles.
 
+### FCB (File Control Block) I/O log
+
+Many 1980s DOS games (including FCB-era titles such as ICON) never use handle
+APIs.  When `trace_file_io = true`, FCB operations are logged as well:
+
+```
+[T+00017055ms] FCB OPEN: "A:LA.MAP" FCB=0E2F:8508 result=ok (AL=0x00)
+[T+00017060ms] FCB BLOCK-READ: "A:LA.MAP" FCB=0E2F:005C recs=243/243 recsize=128 result=ok (AL=0x00) DTA_phys=.....
+[T+00017060ms] FCB DATA [first 64 bytes]: 0E 87 0D 86 ...
+[T+00017420ms] FCB READ: "A:SP.DAT" FCB=0E2F:8508 recsize=128 result=ok (AL=0x00) DTA_phys=.....
+[T+00017421ms] FCB CLOSE: "A:SP.DAT" FCB=0E2F:8508 result=ok (AL=0x00)
+```
+
+Covered functions: AH=0Fh open, AH=10h close, AH=14h sequential read, AH=16h
+create, AH=27h random block read.  Names are decoded from the FCB at DS:DX
+(8.3, space-trimmed).  Read paths also hex-dump the DTA using
+`file_read_hex_dump_bytes`.
+
 ### Video mode switch log
 
 ```

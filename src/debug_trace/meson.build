@@ -7,6 +7,7 @@ libdebug_trace_sources = files(
     'video_mode_logger.cpp',
     'exec_logger.cpp',
     'opcode_dump.cpp',
+    'screen_dump.cpp',
 )
 
 libdebug_trace = static_library(

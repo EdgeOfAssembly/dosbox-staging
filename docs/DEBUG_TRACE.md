@@ -122,6 +122,77 @@ create, AH=27h random block read.  Names are decoded from the FCB at DS:DX
 [T+00003000ms] VIDEO MODE SWITCH: 03h (80x25 16-color text) -> 13h (320x200 256-color VGA)
 ```
 
+### Screen / VRAM dumps
+
+When `screen_dump = true`, the emulator tracks each BIOS mode set and can
+write raw framebuffer bytes for reverse engineering (text `B800` pages, CGA
+graphics, VGA `A000`, …).
+
+```ini
+screen_dump = true
+screen_dump_dir = screen_dumps
+screen_dump_on_mode_set = true
+screen_dump_on_mode_set_delay_ms = 50
+screen_dump_full_16k = false
+screen_dump_write_meta = true
+screen_dump_hotkey = ctrl+f10
+```
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `screen_dump` | `false` | Master switch for VRAM dumps |
+| `screen_dump_dir` | `screen_dumps` | Output directory (auto-created) |
+| `screen_dump_on_mode_set` | `true` | Dump after each INT 10h AH=00 while game trace is active |
+| `screen_dump_on_mode_set_delay_ms` | `50` | Wait after mode set so the game can paint |
+| `screen_dump_full_16k` | `false` | For B800/B000, dump 16 KiB instead of visible page only |
+| `screen_dump_write_meta` | `true` | Write a `.meta` sidecar next to each `.bin` |
+| `screen_dump_hotkey` | `ctrl+f10` | Manual dump binding (see below); `none` disables |
+
+**Hotkey config** (`screen_dump_hotkey`):
+
+```text
+[mod+][mod+]key
+```
+
+Examples: `ctrl+f10`, `ctrl+alt+f12`, `f12`, `none`  
+Mods: `ctrl` / `primary`, `alt`, `gui` (Win/Cmd)  
+Keys: `f1`–`f12`, `a`–`z`, `0`–`9`, `insert`, `delete`, `home`, `end`,
+`pageup`, `pagedown`, `printscreen`, `pause`
+
+Mapper event name is always `vramdump` (can be rebound in the mapper UI too).
+
+> **Note:** `Ctrl+F9` is DOSBox Staging’s default **Shutdown** key. Do not use
+> `ctrl+f9` for dumps.
+
+**Filename pattern:**
+
+```text
+{game}_g{gen:04d}_m{mode:02X}_b{base:05X}_s{size:04X}_{seq:04d}.bin
+```
+
+Example for ICON gameplay (mode 01h, 40×25 text):
+
+```text
+screen_dumps/ICON_g0003_m01_bB8000_s07D0_0007.bin
+screen_dumps/ICON_g0003_m01_bB8000_s07D0_0007.meta
+```
+
+- `game` — basename of the EXE from EXEC (`ICON.EXE` → `ICON`)
+- `g` — mode-switch generation (increments every AH=00)
+- `m` — BIOS mode number
+- `b` — physical base (`B8000`, `A0000`, …)
+- `s` — dump size in bytes (`07D0` = 40×25×2 for mode 01h)
+- `seq` — dump sequence within the session
+
+Log line:
+
+```
+[T+00009105ms] SCREEN DUMP: screen_dumps/ICON_g0002_m01_bB8000_s07D0_0003.bin (2000 bytes) mode=01h base=B8000h reason=mode_set_delayed
+```
+
+Mode 01h (ICON play) → base `B8000`, size `0x7D0`, layout `char,attr` words.
+Mode 03h (menus) → base `B8000`, size `0xFA0`.
+
 ### EXEC / program launch
 
 ```

@@ -104,6 +104,11 @@ void DEBUGTRACE_LogExec(const char* filename, const char* cmdline);
 //   new_mode — AL register (requested mode)
 void DEBUGTRACE_LogVideoModeSwitch(uint16_t old_mode, uint16_t new_mode);
 
+// Called from INT 10h/AH=00h AFTER INT10_SetVideoMode succeeds.
+// Updates VRAM layout tracking and optionally writes a screen dump.
+//   mode_byte — AL as passed to the mode set (bit 15 = don't-clear)
+void DEBUGTRACE_OnVideoModeSet(uint8_t mode_byte);
+
 // ---------------------------------------------------------------------------
 // FCB (File Control Block) logging — INT 21h AH=0Fh/10h/14h/16h/27h
 // ---------------------------------------------------------------------------

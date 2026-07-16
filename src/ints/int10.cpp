@@ -53,6 +53,8 @@ static Bitu INT10_Handler(void) {
 		MOUSEDOS_BeforeNewVideoMode();
 		INT10_SetVideoMode(reg_al);
 		MOUSEDOS_AfterNewVideoMode(true);
+		// Track VRAM layout + optional dump after the mode is live
+		DEBUGTRACE_OnVideoModeSet(static_cast<uint8_t>(reg_al));
 		break;
 	case 0x01:								/* Set TextMode Cursor Shape */
 		INT10_SetCursorShape(reg_ch,reg_cl);

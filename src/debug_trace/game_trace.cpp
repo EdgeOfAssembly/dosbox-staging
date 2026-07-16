@@ -10,6 +10,7 @@
 #include "video_mode_logger.h"
 #include "exec_logger.h"
 #include "opcode_dump.h"
+#include "screen_dump.h"
 
 #include "config/setup.h"
 
@@ -51,6 +52,14 @@ struct TraceConfig {
 	int         dedup_interrupt_window_ms        = 50;
 	bool        deduplicate_instructions         = false;
 	int         dedup_instruction_max_consecutive = 3;
+	// Screen / VRAM dumps
+	bool        screen_dump              = false;
+	std::string screen_dump_dir          = "screen_dumps";
+	bool        screen_dump_on_mode_set  = true;
+	int         screen_dump_delay_ms     = 50;
+	bool        screen_dump_full_16k     = false;
+	bool        screen_dump_write_meta   = true;
+	std::string screen_dump_hotkey       = "ctrl+f10";
 };
 
 static TraceConfig g_config;
@@ -350,6 +359,16 @@ void DEBUGTRACE_LogVideoModeSwitch(const uint16_t old_mode,
 	VideoModeLogger_Log(old_mode, new_mode);
 }
 
+void DEBUGTRACE_OnVideoModeSet(const uint8_t mode_byte)
+{
+	// Always track when screen dump subsystem is on (even mid-shell if enabled).
+	// Auto dumps themselves still require g_trace_enabled (see screen_dump.cpp).
+	if (!g_config.screen_dump) {
+		return;
+	}
+	ScreenDump_OnModeSet(mode_byte);
+}
+
 // ---------------------------------------------------------------------------
 // Config section
 // ---------------------------------------------------------------------------
@@ -380,6 +399,20 @@ static void init_debugtrace_settings(const SectionProp& section)
 	g_config.dedup_instruction_max_consecutive = section.GetInt("dedup_instruction_max_consecutive");
 	if (g_config.dedup_instruction_max_consecutive < 1) {
 		g_config.dedup_instruction_max_consecutive = 1;
+	}
+
+	g_config.screen_dump             = section.GetBool("screen_dump");
+	g_config.screen_dump_dir         = section.GetString("screen_dump_dir");
+	g_config.screen_dump_on_mode_set = section.GetBool("screen_dump_on_mode_set");
+	g_config.screen_dump_delay_ms    = section.GetInt("screen_dump_on_mode_set_delay_ms");
+	if (g_config.screen_dump_delay_ms < 0) {
+		g_config.screen_dump_delay_ms = 0;
+	}
+	g_config.screen_dump_full_16k   = section.GetBool("screen_dump_full_16k");
+	g_config.screen_dump_write_meta = section.GetBool("screen_dump_write_meta");
+	g_config.screen_dump_hotkey     = section.GetString("screen_dump_hotkey");
+	if (g_config.screen_dump_hotkey.empty()) {
+		g_config.screen_dump_hotkey = "ctrl+f10";
 	}
 }
 
@@ -511,6 +544,49 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	        "kicks in. After this many identical entries in a row, further duplicates\n"
 	        "are suppressed until a different CS:IP is seen.\n"
 	        "('3' by default).");
+
+	// --- Screen / VRAM dumps ---
+	pbool = section->AddBool("screen_dump", OnlyAtStart, false);
+	pbool->SetHelp(
+	        "Enable VRAM / text-buffer dumps for reverse engineering ('false' by default).\n"
+	        "Writes raw framebuffer bytes plus optional .meta sidecars.\n"
+	        "Hotkey is set by 'screen_dump_hotkey' (default ctrl+f10).\n"
+	        "Naming: {game}_g{gen}_m{mode}_b{base}_s{size}_{seq}.bin");
+
+	pstring = section->AddString("screen_dump_dir", OnlyAtStart, "screen_dumps");
+	pstring->SetHelp(
+	        "Directory for screen dump files ('screen_dumps' by default).\n"
+	        "Created automatically if missing.");
+
+	pbool = section->AddBool("screen_dump_on_mode_set", OnlyAtStart, true);
+	pbool->SetHelp(
+	        "When screen_dump is enabled, automatically dump after each INT 10h AH=00\n"
+	        "video mode switch while game tracing is active ('true' by default).\n"
+	        "Use this to catch menu mode vs gameplay mode transitions.");
+
+	pint = section->AddInt("screen_dump_on_mode_set_delay_ms", OnlyAtStart, 50);
+	pint->SetHelp(
+	        "Delay in milliseconds after a mode switch before dumping ('50' by default).\n"
+	        "Gives the game time to paint the first frame.  Set to 0 for an immediate dump.");
+
+	pbool = section->AddBool("screen_dump_full_16k", OnlyAtStart, false);
+	pbool->SetHelp(
+	        "For B800/B000 text and CGA modes, dump the full 16 KiB aperture instead of\n"
+	        "only the visible page ('false' by default → mode 01h dumps 0x7D0 bytes).");
+
+	pbool = section->AddBool("screen_dump_write_meta", OnlyAtStart, true);
+	pbool->SetHelp(
+	        "Write a .meta text sidecar next to each .bin dump with mode/base/size/cols\n"
+	        "('true' by default).");
+
+	pstring = section->AddString("screen_dump_hotkey", OnlyAtStart, "ctrl+f10");
+	pstring->SetHelp(
+	        "Keyboard shortcut for a manual VRAM dump (mapper event 'vramdump').\n"
+	        "Format: [mod+][mod+]key  e.g. 'ctrl+f10', 'ctrl+alt+f12', 'f12', 'none'.\n"
+	        "Modifiers: ctrl (or primary), alt, gui (win/cmd).  Keys: f1–f12, a–z, 0–9,\n"
+	        "insert, delete, home, end, pageup, pagedown, printscreen, pause.\n"
+	        "Default 'ctrl+f10'.  Do NOT use 'ctrl+f9' — that is DOSBox Shutdown.\n"
+	        "Set to 'none' to disable the hotkey (mode-set dumps still work).");
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +652,18 @@ void DEBUGTRACE_Init()
 	if (g_config.binary_opcode_dump) {
 		OpcodeDump_Init(g_config.binary_opcode_file.c_str());
 	}
+
+	if (g_config.screen_dump) {
+		ScreenDumpConfig sdc;
+		sdc.enabled              = true;
+		sdc.dir                  = g_config.screen_dump_dir;
+		sdc.on_mode_set          = g_config.screen_dump_on_mode_set;
+		sdc.on_mode_set_delay_ms = g_config.screen_dump_delay_ms;
+		sdc.full_16k             = g_config.screen_dump_full_16k;
+		sdc.write_meta           = g_config.screen_dump_write_meta;
+		sdc.hotkey               = g_config.screen_dump_hotkey;
+		ScreenDump_Init(sdc);
+	}
 }
 
 void DEBUGTRACE_Shutdown()
@@ -602,6 +690,7 @@ void DEBUGTRACE_Shutdown()
 	InstructionLogger_ResetDedup();
 	FileIOLogger_Shutdown();
 	OpcodeDump_Shutdown();
+	ScreenDump_Shutdown();
 }
 
 // Called by ExecLogger when the first EXEC is detected (auto_trace_on_exec mode)

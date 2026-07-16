@@ -8,4 +8,5 @@ target_sources(libdosboxcommon PRIVATE
   exec_logger.cpp
   opcode_dump.cpp
   screen_dump.cpp
+  mem_dump.cpp
 )

@@ -7,6 +7,7 @@
 
 #include "exec_logger.h"
 #include "game_trace.h"
+#include "mem_dump.h"
 #include "screen_dump.h"
 
 #include "cpu/registers.h"
@@ -51,8 +52,9 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 	// Track nesting so child-process exits don't prematurely stop tracing
 	DEBUGTRACE_OnExecDepthPush();
 
-	// Feed game basename to screen dump naming (ICON.EXE → ICON)
+	// Feed game basename to dump naming (ICON.EXE → ICON)
 	ScreenDump_SetGameName(filename);
+	MemDump_SetGameName(filename);
 
 	char line[512];
 	snprintf(line, sizeof(line),

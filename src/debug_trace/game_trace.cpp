@@ -10,6 +10,7 @@
 #include "video_mode_logger.h"
 #include "exec_logger.h"
 #include "opcode_dump.h"
+#include "mem_dump.h"
 #include "screen_dump.h"
 
 #include "config/setup.h"
@@ -60,6 +61,12 @@ struct TraceConfig {
 	bool        screen_dump_full_16k     = false;
 	bool        screen_dump_write_meta   = true;
 	std::string screen_dump_hotkey       = "ctrl+f10";
+	// Guest memory dumps (DS regions / phys)
+	bool        mem_dump              = false;
+	std::string mem_dump_dir          = "mem_dumps";
+	bool        mem_dump_write_meta   = true;
+	std::string mem_dump_hotkey       = "ctrl+f11";
+	std::string mem_dump_regions = ""; // empty → ICON defaults
 };
 
 static TraceConfig g_config;
@@ -361,12 +368,14 @@ void DEBUGTRACE_LogVideoModeSwitch(const uint16_t old_mode,
 
 void DEBUGTRACE_OnVideoModeSet(const uint8_t mode_byte)
 {
-	// Always track when screen dump subsystem is on (even mid-shell if enabled).
-	// Auto dumps themselves still require g_trace_enabled (see screen_dump.cpp).
-	if (!g_config.screen_dump) {
-		return;
+	// Always track when dump subsystems are on (even mid-shell if enabled).
+	// Auto VRAM dumps themselves still require g_trace_enabled (see screen_dump.cpp).
+	if (g_config.screen_dump) {
+		ScreenDump_OnModeSet(mode_byte);
 	}
-	ScreenDump_OnModeSet(mode_byte);
+	if (g_config.mem_dump) {
+		MemDump_OnModeSet(mode_byte);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +423,15 @@ static void init_debugtrace_settings(const SectionProp& section)
 	if (g_config.screen_dump_hotkey.empty()) {
 		g_config.screen_dump_hotkey = "ctrl+f10";
 	}
+
+	g_config.mem_dump            = section.GetBool("mem_dump");
+	g_config.mem_dump_dir        = section.GetString("mem_dump_dir");
+	g_config.mem_dump_write_meta = section.GetBool("mem_dump_write_meta");
+	g_config.mem_dump_hotkey     = section.GetString("mem_dump_hotkey");
+	if (g_config.mem_dump_hotkey.empty()) {
+		g_config.mem_dump_hotkey = "ctrl+f11";
+	}
+	g_config.mem_dump_regions = section.GetString("mem_dump_regions");
 }
 
 static void notify_debugtrace_setting_updated([[maybe_unused]] const SectionProp& section,
@@ -587,6 +605,40 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	        "insert, delete, home, end, pageup, pagedown, printscreen, pause.\n"
 	        "Default 'ctrl+f10'.  Do NOT use 'ctrl+f9' — that is DOSBox Shutdown.\n"
 	        "Set to 'none' to disable the hotkey (mode-set dumps still work).");
+
+	// --- Guest memory dumps (DS: offset regions) ---
+	pbool = section->AddBool("mem_dump", OnlyAtStart, false);
+	pbool->SetHelp(
+	        "Enable guest-memory region dumps for reverse engineering ('false' by default).\n"
+	        "Hotkey dumps configured DS/phys regions (ICON stamp bank, MAP, offscreen buffer).\n"
+	        "Naming: {game}_mem_g{gen}_{name}_b{base}_s{size}_{seq}.bin");
+
+	pstring = section->AddString("mem_dump_dir", OnlyAtStart, "mem_dumps");
+	pstring->SetHelp(
+	        "Directory for mem dump files ('mem_dumps' by default).\n"
+	        "Created automatically if missing.");
+
+	pbool = section->AddBool("mem_dump_write_meta", OnlyAtStart, true);
+	pbool->SetHelp(
+	        "Write a .meta text sidecar next to each mem dump .bin ('true' by default).");
+
+	pstring = section->AddString("mem_dump_hotkey", OnlyAtStart, "ctrl+f11");
+	pstring->SetHelp(
+	        "Keyboard shortcut for a manual guest-memory dump (mapper event 'memdump').\n"
+	        "Same format as screen_dump_hotkey. Default 'ctrl+f11'.\n"
+	        "Do NOT use 'ctrl+f9' (Shutdown) or the same key as screen_dump_hotkey.\n"
+	        "Set to 'none' to disable.");
+
+	pstring = section->AddString("mem_dump_regions", OnlyAtStart, "");
+	pstring->SetHelp(
+	        "Comma-separated memory regions to dump. Empty = ICON Quest defaults:\n"
+	        "  stamps@ds:207A+1200,map@ds:31D4+0F00,offscr@ds:206C->near+2000\n"
+	        "Syntax per region:\n"
+	        "  name@ds:OFF+SIZE          — SegPhys(DS)+OFF, SIZE bytes (hex)\n"
+	        "  name@ds:OFF->near+SIZE    — word at DS:OFF is near offset in DS\n"
+	        "  name@ds:OFF->far+SIZE     — far ptr (off,seg) at DS:OFF\n"
+	        "  name@phys:BASE+SIZE       — absolute physical address\n"
+	        "Example: stamps@ds:207A+1200,hud@ds:1000+100,vram@phys:B8000+07D0");
 }
 
 // ---------------------------------------------------------------------------
@@ -664,6 +716,16 @@ void DEBUGTRACE_Init()
 		sdc.hotkey               = g_config.screen_dump_hotkey;
 		ScreenDump_Init(sdc);
 	}
+
+	if (g_config.mem_dump) {
+		MemDumpConfig mdc;
+		mdc.enabled    = true;
+		mdc.dir        = g_config.mem_dump_dir;
+		mdc.write_meta = g_config.mem_dump_write_meta;
+		mdc.hotkey     = g_config.mem_dump_hotkey;
+		mdc.regions    = g_config.mem_dump_regions;
+		MemDump_Init(mdc);
+	}
 }
 
 void DEBUGTRACE_Shutdown()
@@ -691,6 +753,7 @@ void DEBUGTRACE_Shutdown()
 	FileIOLogger_Shutdown();
 	OpcodeDump_Shutdown();
 	ScreenDump_Shutdown();
+	MemDump_Shutdown();
 }
 
 // Called by ExecLogger when the first EXEC is detected (auto_trace_on_exec mode)

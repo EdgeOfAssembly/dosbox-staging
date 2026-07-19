@@ -1,6 +1,7 @@
 libgui_sources = files(
     'auto_image_adjustments.cpp',
     'clipboard.cpp',
+    'debug_overlay.cpp',
     'mapper.cpp',
     'mapper.cpp',
     'sdl_gui.cpp',

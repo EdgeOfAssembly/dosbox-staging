@@ -7,6 +7,7 @@
 
 #include "gui/private/common.h"
 #include "gui/private/shader_manager.h"
+#include "gui/debug_overlay.h"
 
 #include "capture/capture.h"
 #include "dosbox_config.h"
@@ -584,6 +585,10 @@ void OpenGlRenderer::PresentFrame()
 {
 	RenderPass1();
 	RenderPass2();
+
+	// Host-side RE cell grid (after guest frame; before capture/swap).
+	// Viewport is still the game draw rect from RenderPass2.
+	DEBUG_OVERLAY_DrawOpenGL();
 
 	// Optionally capture frame
 	if (CAPTURE_IsCapturingPostRenderImage()) {

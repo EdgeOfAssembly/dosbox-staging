@@ -60,6 +60,18 @@ event is logged to `game_trace.log`.
 | `dedup_interrupt_window_ms` | `50` | Time window in milliseconds for interrupt deduplication. Identical INT/AH/AL combinations within this window are suppressed after the first occurrence. |
 | `deduplicate_instructions` | `false` | Suppress repeated identical instruction entries at the same CS:IP address when they appear in immediate succession (see `dedup_instruction_max_consecutive`). |
 | `dedup_instruction_max_consecutive` | `3` | Maximum number of consecutive identical CS:IP entries before deduplication kicks in. After this many identical entries in a row, further duplicates are suppressed until a different CS:IP is seen. |
+| `toggle_hotkey` | `ctrl+alt+d` | Live on/off for tracing while DOSBox runs (`none` to disable). **Does not override** `enabled=false`. |
+
+### Pause vs toggle (always respect config)
+
+| Action | Effect |
+|--------|--------|
+| `[debugtrace] enabled = false` | **No tracing ever.** Toggle and unpause cannot turn it on. |
+| Host pause (**Alt+Pause**) | **Always** suspends hot-path tracing (`g_trace_enabled=false`). Log: `TRACE SUSPENDED (host pause)`. |
+| Host unpause | Resumes **only if** `enabled=true` **and** the session is still armed (auto-EXEC or toggle still ON). |
+| `toggle_hotkey` | Flips the live session on/off **within** `enabled=true`. Toggle-off blocks further `auto_trace_on_exec` until toggle-on. |
+
+Config is the outer gate for every path (Init, EXEC activate, toggle, pause resume).
 
 ---
 

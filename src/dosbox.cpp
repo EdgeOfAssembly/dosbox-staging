@@ -74,6 +74,8 @@
 #include "webserver/webserver.h"
 #include "webserver/bridge.h"
 #include "debug_trace/game_trace.h"
+#include "control/control_socket.h"
+#include "gui/debug_overlay.h"
 
 MachineType machine   = MachineType::None;
 SvgaType    svga_type = SvgaType::None;
@@ -118,6 +120,7 @@ static Bitu normal_loop()
 	while (true) {
 		if (PIC_RunQueue()) {
 			Webserver::DebugBridge::Instance().ProcessRequests();
+			CONTROL_SOCKET_Poll();
 
 			ret = (*cpudecoder)();
 			if (ret < 0) {
@@ -1089,6 +1092,8 @@ void DOSBOX_InitModuleConfigsAndMessages()
 	ETHERNET_AddConfigSection(control);
 	WEBSERVER_AddConfigSection(control);
 	DEBUGTRACE_AddConfigSection(control);
+	CONTROL_SOCKET_AddConfigSection(control);
+	DEBUG_OVERLAY_AddConfigSection(control);
 
 	control->AddAutoexecSection();
 
@@ -1157,12 +1162,16 @@ void DOSBOX_InitModules()
 	VIRTUALBOX_Init();
 	VMWARE_Init();
 	WEBSERVER_Init();
+	CONTROL_SOCKET_Init();
+	DEBUG_OVERLAY_Init();
 
 	AUTOEXEC_Init();
 }
 
 void DOSBOX_DestroyModules()
 {
+	DEBUG_OVERLAY_Shutdown();
+	CONTROL_SOCKET_Shutdown();
 	WEBSERVER_Destroy();
 	VMWARE_Destroy();
 	VIRTUALBOX_Destroy();

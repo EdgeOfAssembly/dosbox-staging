@@ -24,11 +24,10 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 	}
 
 	// --- Activation gate ---
-	// We only attempt to activate tracing when it is not yet running.
-	// Once g_trace_enabled is true, every EXEC (including ones from the
-	// game's own batch scripts or child processes) is traced normally —
-	// the interactive-only check is irrelevant at that point.
-	const bool was_already_active = g_trace_enabled;
+	// Use user-want (not hot-path g_trace_enabled): host pause suspends the
+	// hot path but the session is still "active". Toggle-off blocks re-arm.
+	// Config enabled=false is enforced inside ActivateTrace / apply_trace_runtime.
+	const bool was_already_active = DEBUGTRACE_UserWantsActive();
 	if (!was_already_active && DEBUGTRACE_AutoTraceOnExec()) {
 		bool may_activate = true;
 
@@ -44,8 +43,9 @@ void ExecLogger_Log(const char* filename, const char* cmdline)
 		}
 	}
 
-	// Nothing to do if tracing did not (or could not yet) activate
-	if (!g_trace_enabled) {
+	// Nothing to do if tracing did not (or could not yet) activate.
+	// Depth/log while host-paused still OK if user wants the session armed.
+	if (!DEBUGTRACE_UserWantsActive()) {
 		return;
 	}
 

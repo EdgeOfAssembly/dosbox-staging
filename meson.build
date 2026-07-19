@@ -1206,6 +1206,7 @@ subdir('src/ints')
 subdir('src/midi')
 subdir('src/shell')
 subdir('src/utils')
+subdir('src/control')
 
 # debugger-specific libs
 if get_option('enable_debugger') != 'none'

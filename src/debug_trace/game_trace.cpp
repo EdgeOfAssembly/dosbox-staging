@@ -14,6 +14,10 @@
 #include "screen_dump.h"
 
 #include "config/setup.h"
+#include "gui/mapper.h"
+#include "misc/logging.h"
+
+#include "SDL.h"
 
 #include <cctype>
 #include <chrono>
@@ -21,6 +25,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // Global state
@@ -67,13 +72,107 @@ struct TraceConfig {
 	bool        mem_dump_write_meta   = true;
 	std::string mem_dump_hotkey       = "ctrl+f11";
 	std::string mem_dump_regions = ""; // empty → ICON defaults
+	// Live on/off (mapper); independent of host pause suspend
+	std::string toggle_hotkey = "ctrl+alt+d";
 };
 
 static TraceConfig g_config;
 
-// Output file (nullptr = stdout)
+// User wants tracing when not host-paused (set by ActivateTrace / toggle).
+static bool g_user_wants_trace = false;
+// Explicit toggle-off: block auto_trace_on_exec re-activation until toggle on
+// or program-exit / new session.
+static bool g_user_disabled = false;
+// Host Alt+Pause is active — forces g_trace_enabled off.
+static bool g_host_paused = false;
+
+// Output file (nullptr = stdout) — declared early for flush_log / apply helpers
 static FILE* g_log_fp   = nullptr;
-static bool  g_own_file = false;  // true if we opened it and must close it
+static bool  g_own_file = false;
+
+// Single place that computes the hot-path flag. Config is always the outer gate.
+static void apply_trace_runtime()
+{
+	// Config master switch and Init readiness always win — no path may bypass.
+	if (!g_config.enabled || !g_debugtrace_system_ready) {
+		g_trace_enabled = false;
+		return;
+	}
+	// Host pause always forces off (even if user wants on).
+	if (g_host_paused) {
+		g_trace_enabled = false;
+		return;
+	}
+	// Runtime toggle / auto-activate preference.
+	g_trace_enabled = g_user_wants_trace;
+}
+
+static void flush_log()
+{
+	if (g_log_fp) {
+		fflush(g_log_fp);
+	}
+}
+
+// Parse "ctrl+alt+d", "f7", "none" → scancode + MAPPER mods (MMOD1=ctrl, MMOD2=alt).
+static bool parse_toggle_hotkey(const std::string& spec_in, SDL_Scancode& out_key,
+                                uint32_t& out_mods)
+{
+	out_key  = SDL_SCANCODE_UNKNOWN;
+	out_mods = 0;
+
+	std::string spec;
+	spec.reserve(spec_in.size());
+	for (unsigned char c : spec_in) {
+		if (c == ' ' || c == '\t') {
+			continue;
+		}
+		spec.push_back(static_cast<char>(std::tolower(c)));
+	}
+	if (spec.empty() || spec == "none" || spec == "off" || spec == "disabled") {
+		return false;
+	}
+
+	size_t start = 0;
+	while (start <= spec.size()) {
+		const size_t plus = spec.find('+', start);
+		const std::string part = (plus == std::string::npos)
+		                                 ? spec.substr(start)
+		                                 : spec.substr(start, plus - start);
+		start = (plus == std::string::npos) ? spec.size() + 1 : plus + 1;
+		if (part.empty()) {
+			continue;
+		}
+		if (part == "ctrl" || part == "control") {
+			out_mods |= MMOD1;
+		} else if (part == "alt") {
+			out_mods |= MMOD2;
+		} else if (part.size() >= 2 && part[0] == 'f') {
+			int n = 0;
+			try {
+				n = std::stoi(part.substr(1));
+			} catch (...) {
+				n = 0;
+			}
+			if (n >= 1 && n <= 12) {
+				out_key = static_cast<SDL_Scancode>(SDL_SCANCODE_F1 +
+				                                    (n - 1));
+			}
+		} else if (part.size() == 1 && part[0] >= 'a' && part[0] <= 'z') {
+			out_key = static_cast<SDL_Scancode>(SDL_SCANCODE_A +
+			                                    (part[0] - 'a'));
+		}
+	}
+	return out_key != SDL_SCANCODE_UNKNOWN;
+}
+
+static void toggle_hotkey_handler(bool pressed)
+{
+	if (!pressed) {
+		return;
+	}
+	DEBUGTRACE_ToggleActive();
+}
 
 // Epoch for elapsed-time calculations
 static std::chrono::steady_clock::time_point g_epoch;
@@ -432,14 +531,22 @@ static void init_debugtrace_settings(const SectionProp& section)
 		g_config.mem_dump_hotkey = "ctrl+f11";
 	}
 	g_config.mem_dump_regions = section.GetString("mem_dump_regions");
+
+	g_config.toggle_hotkey = section.GetString("toggle_hotkey");
+	if (g_config.toggle_hotkey.empty()) {
+		g_config.toggle_hotkey = "ctrl+alt+d";
+	}
 }
 
 static void notify_debugtrace_setting_updated([[maybe_unused]] const SectionProp& section,
                                                [[maybe_unused]] const std::string prop_name)
 {
 	init_debugtrace_settings(section);
-	// Re-evaluate global flag
-	g_trace_enabled = g_config.enabled && !g_config.auto_trace_on_exec;
+	// Re-evaluate runtime flag (respect pause + user want)
+	if (!g_config.enabled) {
+		g_user_wants_trace = false;
+	}
+	apply_trace_runtime();
 }
 
 void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
@@ -639,6 +746,14 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	        "  name@ds:OFF->far+SIZE     — far ptr (off,seg) at DS:OFF\n"
 	        "  name@phys:BASE+SIZE       — absolute physical address\n"
 	        "Example: stamps@ds:207A+1200,hud@ds:1000+100,vram@phys:B8000+07D0");
+
+	pstring = section->AddString("toggle_hotkey", OnlyAtStart, "ctrl+alt+d");
+	pstring->SetHelp(
+	        "Keyboard shortcut to turn live tracing on/off while DOSBox runs\n"
+	        "(mapper event 'tracetoggle'). Format like screen_dump_hotkey:\n"
+	        "'ctrl+alt+d' (default), 'f7', 'none' to disable.\n"
+	        "Host pause (Alt+Pause) always suspends tracing regardless of this;\n"
+	        "unpause resumes only if enabled=true and this toggle is still on.");
 }
 
 // ---------------------------------------------------------------------------
@@ -653,6 +768,11 @@ void DEBUGTRACE_Init()
 	}
 
 	init_debugtrace_settings(*section);
+
+	g_user_wants_trace = false;
+	g_user_disabled    = false;
+	g_host_paused      = false;
+	g_trace_enabled    = false;
 
 	if (!g_config.enabled) {
 		// Master switch is off: g_trace_enabled stays false, g_debugtrace_system_ready
@@ -692,7 +812,8 @@ void DEBUGTRACE_Init()
 	//   including shell activity.
 	if (!g_config.auto_trace_on_exec) {
 		set_epoch_now();
-		g_trace_enabled = true;
+		g_user_wants_trace = true;
+		g_trace_enabled    = !g_host_paused;
 		DEBUGTRACE_Write("[debugtrace] === TRACE LOGGING STARTED ===");
 	}
 
@@ -726,6 +847,19 @@ void DEBUGTRACE_Init()
 		mdc.regions    = g_config.mem_dump_regions;
 		MemDump_Init(mdc);
 	}
+
+	// Live on/off toggle (does not replace host pause suspend)
+	SDL_Scancode tkey = SDL_SCANCODE_UNKNOWN;
+	uint32_t tmods    = 0;
+	if (parse_toggle_hotkey(g_config.toggle_hotkey, tkey, tmods)) {
+		MAPPER_AddHandler(toggle_hotkey_handler,
+		                  tkey,
+		                  tmods,
+		                  "tracetoggle",
+		                  "Trace Toggle");
+		LOG_MSG("DEBUGTRACE: toggle_hotkey=%s (pause suspends; unpause resumes if on)",
+		        g_config.toggle_hotkey.c_str());
+	}
 }
 
 void DEBUGTRACE_Shutdown()
@@ -744,10 +878,13 @@ void DEBUGTRACE_Shutdown()
 		g_own_file = false;
 	}
 
-	g_trace_enabled = false;
+	g_trace_enabled                = false;
+	g_user_wants_trace             = false;
+	g_user_disabled                = false;
+	g_host_paused                  = false;
 	g_trace_skip_first_instruction = false;
-	g_debugtrace_system_ready = false;
-	s_exec_depth = 0;
+	g_debugtrace_system_ready      = false;
+	s_exec_depth                   = 0;
 	InterruptLogger_ResetDedup();
 	InstructionLogger_ResetDedup();
 	FileIOLogger_Shutdown();
@@ -762,28 +899,116 @@ void DEBUGTRACE_Shutdown()
 // ---------------------------------------------------------------------------
 void DEBUGTRACE_ActivateTrace()
 {
-	if (g_trace_enabled) {
+	// Never arm tracing if conf has enabled=false (or Init never ran).
+	if (!g_config.enabled || !g_debugtrace_system_ready) {
 		return;
 	}
-	set_epoch_now();
-	g_trace_enabled = true;
+	// Explicit toggle-off blocks auto EXEC activation until user toggles on.
+	if (g_user_disabled) {
+		return;
+	}
+	// Already user-on (may be suspended by host pause)
+	if (g_user_wants_trace) {
+		apply_trace_runtime();
+		return;
+	}
+	if (!g_epoch_set) {
+		set_epoch_now();
+	}
+	g_user_wants_trace             = true;
+	g_user_disabled                = false;
 	g_trace_skip_first_instruction = true;
 	InterruptLogger_ResetDedup();
 	InstructionLogger_ResetDedup();
+	apply_trace_runtime();
+	if (g_host_paused) {
+		DEBUGTRACE_Write(
+		        "[debugtrace] === TRACE ARMED (host paused — will run on unpause) ===");
+	}
+}
+
+void DEBUGTRACE_OnHostPause(const bool paused)
+{
+	// Pause always forces hot-path off. Unpause resumes only when config
+	// still allows it (enabled=true) and the user still wants tracing.
+	if (paused) {
+		if (g_trace_enabled) {
+			DEBUGTRACE_Write(
+			        "[debugtrace] === TRACE SUSPENDED (host pause) ===");
+			flush_log();
+		}
+		g_host_paused = true;
+		apply_trace_runtime(); // → false
+		return;
+	}
+
+	g_host_paused = false;
+	apply_trace_runtime();
+	if (g_trace_enabled) {
+		DEBUGTRACE_Write("[debugtrace] === TRACE RESUMED (host unpause) ===");
+		flush_log();
+	}
+}
+
+void DEBUGTRACE_ToggleActive()
+{
+	// Config is absolute: toggle cannot enable a disabled debugtrace system.
+	if (!g_config.enabled || !g_debugtrace_system_ready) {
+		LOG_MSG("DEBUGTRACE: toggle ignored (enabled=false in [debugtrace] config)");
+		return;
+	}
+
+	if (g_user_wants_trace) {
+		g_user_wants_trace = false;
+		g_user_disabled    = true; // block auto_trace_on_exec until toggle on
+		apply_trace_runtime();
+		DEBUGTRACE_Write("[debugtrace] === TRACE OFF (toggle hotkey) ===");
+		LOG_MSG("DEBUGTRACE: tracing OFF (config still enabled=%s)",
+		        g_config.enabled ? "true" : "false");
+		flush_log();
+		return;
+	}
+
+	g_user_wants_trace = true;
+	g_user_disabled    = false;
+	if (!g_epoch_set) {
+		set_epoch_now();
+	}
+	g_trace_skip_first_instruction = true;
+	apply_trace_runtime();
+	if (g_host_paused) {
+		DEBUGTRACE_Write(
+		        "[debugtrace] === TRACE ON (suspended until host unpause) ===");
+		LOG_MSG("DEBUGTRACE: tracing ON (host paused — suspended)");
+	} else if (g_trace_enabled) {
+		DEBUGTRACE_Write("[debugtrace] === TRACE ON (toggle hotkey) ===");
+		LOG_MSG("DEBUGTRACE: tracing ON");
+	}
+}
+
+bool DEBUGTRACE_IsActive()
+{
+	return g_trace_enabled;
+}
+
+bool DEBUGTRACE_UserWantsActive()
+{
+	// Prefer config: if master off, user "want" is irrelevant.
+	return g_config.enabled && g_user_wants_trace;
 }
 
 void DEBUGTRACE_OnExecDepthPush()
 {
-	// Only track depth while tracing is active
-	if (g_trace_enabled) {
+	// Only track depth while user wants tracing (even if host-paused)
+	if (g_user_wants_trace) {
 		++s_exec_depth;
 	}
 }
 
 void DEBUGTRACE_OnProgramTerminate(const uint8_t return_code)
 {
-	// Nothing to do if tracing is not currently active
-	if (!g_trace_enabled) {
+	// Nothing to do if user does not want tracing (or system never activated)
+	if (!g_user_wants_trace) {
 		return;
 	}
 
@@ -819,10 +1044,13 @@ void DEBUGTRACE_OnProgramTerminate(const uint8_t return_code)
 
 	if (s_exec_depth <= 0) {
 		// The top-level traced program has exited — stop logging
-		s_exec_depth = 0;
-		g_trace_enabled = false;
+		s_exec_depth                   = 0;
+		g_user_wants_trace             = false;
+		g_trace_enabled                = false;
 		g_trace_skip_first_instruction = false;
-		DEBUGTRACE_Write("[debugtrace] === TRACE LOGGING DEACTIVATED (program exited) ===");
+		DEBUGTRACE_Write(
+		        "[debugtrace] === TRACE LOGGING DEACTIVATED (program exited) ===");
+		flush_log();
 		// Keep g_debugtrace_system_ready=true and the log file open so
 		// the user can run the game again in the same session.
 	}

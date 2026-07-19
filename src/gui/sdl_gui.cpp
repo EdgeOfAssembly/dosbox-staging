@@ -24,6 +24,7 @@
 #include "config/setup.h"
 #include "cpu/cpu.h"
 #include "dosbox.h"
+#include "debug_trace/game_trace.h"
 #include "gui/mapper.h"
 #include "gui/render/opengl_renderer.h"
 #include "gui/render/sdl_renderer.h"
@@ -311,6 +312,8 @@ static bool is_command_pressed(const SDL_Event event)
 
 	sdl.is_paused = true;
 	TITLEBAR_RefreshTitle();
+	// Always stop hot-path debugtrace while host-paused (see DEBUG_TRACE.md).
+	DEBUGTRACE_OnHostPause(true);
 
 	SDL_Event event;
 
@@ -363,9 +366,16 @@ static bool is_command_pressed(const SDL_Event event)
 				}
 				sdl.is_paused = false;
 				TITLEBAR_RefreshTitle();
+				// Resume tracing only if config enabled + user still wants it
+				DEBUGTRACE_OnHostPause(false);
 				break;
 			}
 		}
+	}
+	// If we left the loop via quit request while still "paused"
+	if (sdl.is_paused) {
+		sdl.is_paused = false;
+		DEBUGTRACE_OnHostPause(false);
 	}
 	MIXER_UnlockMixerThread();
 }

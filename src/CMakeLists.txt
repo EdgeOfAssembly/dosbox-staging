@@ -20,6 +20,7 @@ add_subdirectory(misc)
 add_subdirectory(shell)
 add_subdirectory(utils)
 add_subdirectory(webserver)
+add_subdirectory(control)
 
 if (WIN32)
   add_subdirectory(platform/windows)

@@ -162,6 +162,19 @@ int  DEBUGTRACE_DeduplicateInstructionMaxConsecutive();
 // Activate tracing (called by ExecLogger on first EXEC when auto_trace_on_exec).
 void DEBUGTRACE_ActivateTrace();
 
+// Host pause (Alt+Pause): always force-stop hot-path tracing while paused.
+// On unpause, resume only if config enabled it and the user still wants tracing.
+void DEBUGTRACE_OnHostPause(bool paused);
+
+// Mapper / socket: toggle live tracing on/off (no effect if [debugtrace] enabled=false).
+void DEBUGTRACE_ToggleActive();
+
+// True when hot-path logging is running right now (not paused, user wants on).
+bool DEBUGTRACE_IsActive();
+
+// True when the user wants tracing when not paused (toggle state).
+bool DEBUGTRACE_UserWantsActive();
+
 // Called from INT 21h/AH=4Bh after activation to increment the exec depth.
 // The depth counter prevents a child-process exit from stopping the trace of
 // the parent game.

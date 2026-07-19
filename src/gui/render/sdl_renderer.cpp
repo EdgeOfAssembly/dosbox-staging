@@ -4,6 +4,7 @@
 #include "sdl_renderer.h"
 
 #include "gui/private/common.h"
+#include "gui/debug_overlay.h"
 
 #include "capture/capture.h"
 #include "config/setup.h"
@@ -344,6 +345,10 @@ void SdlRenderer::PresentFrame()
 
 	SDL_RenderClear(renderer);
 	SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+
+	// Host-side RE grid (does not touch guest VRAM). Drawn before capture
+	// so window screenshots / post-render images include the overlay.
+	DEBUG_OVERLAY_DrawSdl(renderer);
 
 	if (CAPTURE_IsCapturingPostRenderImage()) {
 		// glReadPixels() implicitly blocks until all pipelined

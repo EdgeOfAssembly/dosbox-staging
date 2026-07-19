@@ -12,6 +12,9 @@
 #include "debug_trace/screen_dump.h"
 #include "debug_trace/mem_dump.h"
 #include "gui/debug_overlay.h"
+#include "gui/common.h"
+#include "capture/capture.h"
+#include "debug_trace/game_trace.h"
 
 #include <algorithm>
 #include <atomic>
@@ -399,6 +402,8 @@ enum class CmdKind {
 	Status,    // pid + socket path (no guest state needed)
 	DumpScreen, // trigger ScreenDump_Hotkey
 	DumpMem,    // trigger MemDump_Hotkey
+	CaptureShot, // Staging PNG capture (grouped/rendered/raw)
+	TraceToggle, // DEBUGTRACE_ToggleActive
 };
 
 struct Command {
@@ -633,6 +638,33 @@ static void execute_on_main(Command& cmd)
 		MemDump_Hotkey(false);
 		cmd.reply = "OK\n";
 		break;
+
+	case CmdKind::CaptureShot: {
+		// arg: grouped | rendered | raw (default grouped = Ctrl+F5 style)
+		const std::string mode = lower_copy(cmd.arg);
+		if (mode.empty() || mode == "grouped" || mode == "default" ||
+		    mode == "f5") {
+			CAPTURE_RequestGroupedScreenshot();
+			cmd.reply = "OK capture=grouped\n";
+		} else if (mode == "rendered" || mode == "altf5") {
+			CAPTURE_RequestRenderedScreenshot();
+			cmd.reply = "OK capture=rendered\n";
+		} else if (mode == "raw") {
+			CAPTURE_RequestRawScreenshot();
+			cmd.reply = "OK capture=raw\n";
+		} else {
+			cmd.reply = "ERR capture mode (grouped|rendered|raw)\n";
+		}
+		break;
+	}
+
+	case CmdKind::TraceToggle:
+		DEBUGTRACE_ToggleActive();
+		cmd.reply = std::string("OK trace=") +
+		            (DEBUGTRACE_IsActive() ? "on" : "off") +
+		            " user=" +
+		            (DEBUGTRACE_UserWantsActive() ? "on" : "off") + "\n";
+		break;
 	}
 }
 
@@ -801,13 +833,30 @@ static std::string handle_line(const std::string& raw)
 		       std::string(DEBUG_OVERLAY_IsEnabled() ? "on" : "off") +
 		       " grid=" + std::to_string(oc) + "x" + std::to_string(orows) +
 		       "\n";
+	} else if (cmd_l == "hostpause" || cmd_l == "pause") {
+		// Does not need main-thread queue; request pause, reply OK.
+		const std::string arg = lower_copy(rest);
+		if (arg == "off" || arg == "0" || arg == "unpause" || arg == "resume") {
+			GFX_RequestHostUnpause();
+			return "OK hostpause=off\n";
+		}
+		GFX_RequestHostPause();
+		return "OK hostpause=on (use HOSTUNPAUSE or Alt+Pause to resume)\n";
+	} else if (cmd_l == "hostunpause" || cmd_l == "unpause" ||
+	           cmd_l == "resume") {
+		GFX_RequestHostUnpause();
+		return "OK hostpause=off\n";
+	} else if (cmd_l == "capture" || cmd_l == "shot" || cmd_l == "screenshot") {
+		c.kind = CmdKind::CaptureShot;
+		c.arg  = rest;
+	} else if (cmd_l == "tracetoggle" || cmd_l == "debugtoggle") {
+		c.kind = CmdKind::TraceToggle;
 	} else if (cmd_l == "help") {
 		return "OK commands: HELLO PING STATUS KEY <name> KEYDOWN KEYUP "
-		       "TYPE <text> TEXT B800 DUMPSCREEN DUMPMEM "
-		       "OVERLAY [on|off|toggle|status] HELP QUIT\n"
-		       "Key names: a-z A-Z 0-9 Space Esc Enter Up Down Left Right "
-		       "F1-F12 kp0-kp9 (US/emulator layout, like keypress -e)\n"
-		       "OVERLAY is host-side cell grid only (screenshots yes, VRAM no)\n";
+		       "TYPE <text> TEXT B800 DUMPSCREEN DUMPMEM CAPTURE [grouped|rendered|raw] "
+		       "OVERLAY [on|off|toggle] HOSTPAUSE HOSTUNPAUSE TRACETOGGLE HELP QUIT\n"
+		       "Keys: US/emulator layout (keypress -e). No xdotool required.\n"
+		       "OVERLAY=host cell grid (shots yes, VRAM no). CAPTURE=Staging PNGs.\n";
 	} else if (cmd_l == "quit" || cmd_l == "exit") {
 		return "OK BYE\n";
 	} else {

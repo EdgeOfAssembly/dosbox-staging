@@ -55,6 +55,12 @@ void CAPTURE_AddMidiData(const bool sysex, const size_t len, const uint8_t* data
 void CAPTURE_StartVideoCapture();
 void CAPTURE_StopVideoCapture();
 
+// Programmatic screenshot requests (same as mapper F5 shortcuts).
+// Safe to call from the main thread (e.g. control_socket Poll).
+void CAPTURE_RequestGroupedScreenshot();
+void CAPTURE_RequestRenderedScreenshot();
+void CAPTURE_RequestRawScreenshot();
+
 bool CAPTURE_IsCapturingAudio();
 bool CAPTURE_IsCapturingImage();
 bool CAPTURE_IsCapturingPostRenderImage();

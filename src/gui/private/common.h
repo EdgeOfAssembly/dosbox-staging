@@ -121,4 +121,12 @@ int GFX_GetUserSdlEventId(DosBoxSdlEvent event);
 
 bool GFX_IsPaused();
 
+// Host pause (Alt+Pause equivalent) requested from control socket / agents.
+// Main loop enters the blocking pause loop; unpause via GFX_RequestHostUnpause
+// (socket HOSTUNPAUSE) or the usual Alt+Pause key.
+void GFX_RequestHostPause();
+void GFX_RequestHostUnpause();
+// Call from the main loop; enters pause if a request is pending.
+void GFX_MaybeEnterHostPause();
+
 #endif // DOSBOX_GUI_COMMON_H

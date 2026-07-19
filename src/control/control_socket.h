@@ -22,4 +22,7 @@ void CONTROL_SOCKET_Shutdown();
 // Call from the main emulation loop (same place as Webserver ProcessRequests).
 void CONTROL_SOCKET_Poll();
 
+// While host-paused, the accept thread still handles HOSTUNPAUSE; Poll also
+// runs from the pause loop so queued main-thread cmds can complete.
+
 #endif

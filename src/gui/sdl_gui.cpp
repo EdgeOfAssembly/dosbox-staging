@@ -6,6 +6,7 @@
 
 #include "private/common.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -24,6 +25,7 @@
 #include "config/setup.h"
 #include "cpu/cpu.h"
 #include "dosbox.h"
+#include "control/control_socket.h"
 #include "debug_trace/game_trace.h"
 #include "gui/mapper.h"
 #include "gui/render/opengl_renderer.h"
@@ -303,6 +305,22 @@ static bool is_command_pressed(const SDL_Event event)
 }
 #endif
 
+namespace {
+std::atomic<bool> g_host_pause_request{false};
+std::atomic<bool> g_host_unpause_request{false};
+} // namespace
+
+void GFX_RequestHostPause()
+{
+	g_host_unpause_request.store(false);
+	g_host_pause_request.store(true);
+}
+
+void GFX_RequestHostUnpause()
+{
+	g_host_unpause_request.store(true);
+}
+
 [[maybe_unused]] static void pause_emulation(bool pressed)
 {
 	if (!pressed) {
@@ -314,6 +332,7 @@ static bool is_command_pressed(const SDL_Event event)
 	TITLEBAR_RefreshTitle();
 	// Always stop hot-path debugtrace while host-paused (see DEBUG_TRACE.md).
 	DEBUGTRACE_OnHostPause(true);
+	g_host_unpause_request.store(false);
 
 	SDL_Event event;
 
@@ -329,9 +348,22 @@ static bool is_command_pressed(const SDL_Event event)
 
 	// NOTE: This is one of the few places where we use SDL key codes with
 	// SDL 2.0, rather than scan codes. Is that the correct behavior?
+	// WaitEventTimeout so socket HOSTUNPAUSE can be observed without keys.
 	while (sdl.is_paused && !DOSBOX_IsShutdownRequested()) {
-		// since we're not polling, CPU usage drops to 0.
-		SDL_WaitEvent(&event);
+		if (g_host_unpause_request.exchange(false)) {
+			sdl.is_paused = false;
+			TITLEBAR_RefreshTitle();
+			DEBUGTRACE_OnHostPause(false);
+			break;
+		}
+
+		// Poll control socket while paused (HOSTUNPAUSE, STATUS, etc.)
+		CONTROL_SOCKET_Poll();
+
+		const int ev = SDL_WaitEventTimeout(&event, 100);
+		if (!ev) {
+			continue;
+		}
 
 		switch (event.type) {
 		case SDL_QUIT: GFX_RequestExit(true); break;
@@ -378,6 +410,13 @@ static bool is_command_pressed(const SDL_Event event)
 		DEBUGTRACE_OnHostPause(false);
 	}
 	MIXER_UnlockMixerThread();
+}
+
+void GFX_MaybeEnterHostPause()
+{
+	if (g_host_pause_request.exchange(false)) {
+		pause_emulation(true);
+	}
 }
 
 bool GFX_IsPaused()

@@ -48,8 +48,14 @@ Commands (case-insensitive keyword; replies end with `\n`, multi-line blocks end
 | `B800` | Hex dump of text page (char,attr pairs) |
 | `DUMPSCREEN` | Same as mapper screen_dump hotkey |
 | `DUMPMEM` | Same as mapper mem_dump hotkey |
+| `CAPTURE [grouped\|rendered\|raw]` | Staging PNG (same as F5 shortcuts; includes host overlay) |
+| `HOSTPAUSE` / `HOSTUNPAUSE` | Host pause loop (suspends debugtrace); unpause via socket or Alt+Pause |
+| `TRACETOGGLE` | Flip live tracing on/off (respects `enabled=` config) |
+| `OVERLAY [on\|off\|toggle\|status]` | Host cell grid |
 | `HELP` | List commands |
 | `QUIT` | Close client |
+
+No xdotool required for keys, dumps, screenshots, or pause.
 
 ### Key names
 

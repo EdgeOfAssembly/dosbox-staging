@@ -349,6 +349,27 @@ FILE* CAPTURE_CreateFile(const CaptureType type,
 	return handle;
 }
 
+void CAPTURE_RequestGroupedScreenshot()
+{
+	if (image_capturer) {
+		image_capturer->RequestGroupedCapture();
+	}
+}
+
+void CAPTURE_RequestRenderedScreenshot()
+{
+	if (image_capturer) {
+		image_capturer->RequestRenderedCapture();
+	}
+}
+
+void CAPTURE_RequestRawScreenshot()
+{
+	if (image_capturer) {
+		image_capturer->RequestRawCapture();
+	}
+}
+
 void CAPTURE_StartVideoCapture()
 {
 	switch (capture.state.video) {

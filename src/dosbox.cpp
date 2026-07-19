@@ -121,6 +121,7 @@ static Bitu normal_loop()
 		if (PIC_RunQueue()) {
 			Webserver::DebugBridge::Instance().ProcessRequests();
 			CONTROL_SOCKET_Poll();
+			GFX_MaybeEnterHostPause();
 
 			ret = (*cpudecoder)();
 			if (ret < 0) {

@@ -22,6 +22,7 @@
 #endif
 
 #include "debug_trace/game_trace.h"
+#include "debug_trace/agent_re.h"
 
 #if (!C_CORE_INLINE)
 #define LoadMb(off) mem_readb(off)
@@ -151,7 +152,8 @@ Bits CPU_Core_Normal_Run() noexcept
 #endif
 		cycle_count++;
 #endif
-		if (g_trace_enabled) {
+		// Trace log / backlog when active; BP/STEP when agent_re armed
+		if (g_trace_enabled || AgentRe_NeedsInsnHook()) {
 			// Log the instruction BEFORE it is decoded and executed.
 			// reg_eip here is the starting IP of the instruction about
 			// to be fetched — correct for reverse-engineering purposes.

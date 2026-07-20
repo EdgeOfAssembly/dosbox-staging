@@ -753,9 +753,8 @@
 				return debugCallback;
 			}
 #endif
-			if (g_trace_enabled) {
-				DEBUGTRACE_LogInterrupt(num);
-			}
+			// Always notify agent_re (INT ring / BPINT); text log only if tracing
+			DEBUGTRACE_LogInterrupt(num);
 			CPU_SW_Interrupt(num,GETIP);
 #if CPU_TRAP_CHECK
 			cpu.trap_skip=true;

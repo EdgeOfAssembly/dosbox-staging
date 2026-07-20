@@ -398,8 +398,29 @@ static inline uint64_t mem_readq_inline(PhysPt address)
 	}
 }
 
+// Agent RE write-watch hook (optional; zero cost when inactive).
+// Implemented in debug_trace/agent_re.cpp — always linked into dosbox.
+extern bool AgentRe_NeedsMemWatch();
+extern void AgentRe_OnMemWrite(uint32_t phys, uint8_t old_val, uint8_t new_val);
+
 static inline void mem_writeb_inline(PhysPt address, uint8_t val)
 {
+	if (AgentRe_NeedsMemWatch()) {
+		// Best-effort old value (TLB read or 0 if unmapped)
+		uint8_t old_val = 0;
+		HostPt r_tlb    = get_tlb_read(address);
+		if (r_tlb) {
+			old_val = host_readb(r_tlb + address);
+		}
+		HostPt tlb_addr = get_tlb_write(address);
+		if (tlb_addr) {
+			host_writeb(tlb_addr + address, val);
+		} else {
+			(get_tlb_writehandler(address))->writeb(address, val);
+		}
+		AgentRe_OnMemWrite(static_cast<uint32_t>(address), old_val, val);
+		return;
+	}
 	HostPt tlb_addr = get_tlb_write(address);
 	if (tlb_addr) host_writeb(tlb_addr+address,val);
 	else (get_tlb_writehandler(address))->writeb(address,val);

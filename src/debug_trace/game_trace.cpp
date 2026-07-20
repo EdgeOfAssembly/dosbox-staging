@@ -13,6 +13,7 @@
 #include "mem_dump.h"
 #include "screen_dump.h"
 #include "cpu_backlog.h"
+#include "agent_re.h"
 
 #include "config/setup.h"
 #include "gui/mapper.h"
@@ -338,15 +339,23 @@ int DEBUGTRACE_DeduplicateInstructionMaxConsecutive()
 
 void DEBUGTRACE_LogInstruction(const uint16_t cs_val, const uint16_t ip_val)
 {
-	if (!g_config.trace_instructions && !g_config.binary_opcode_dump) {
-		return;
+	// Agent RE: BP/STEP even when text log is off
+	if (AgentRe_NeedsInsnHook()) {
+		AgentRe_OnInstruction(cs_val, ip_val);
 	}
-	InstructionLogger_Log(cs_val, ip_val);
+	// Backlog + optional text/binary logging
+	if (CpuBacklog_IsEnabled() || g_config.trace_instructions ||
+	    g_config.binary_opcode_dump) {
+		InstructionLogger_Log(cs_val, ip_val);
+	}
 }
 
 void DEBUGTRACE_LogInterrupt(const uint8_t int_num)
 {
-	if (!g_config.trace_interrupts) {
+	// INT ring + INT breakpoints (independent of interrupt text log)
+	AgentRe_OnInterrupt(int_num);
+
+	if (!g_trace_enabled || !g_config.trace_interrupts) {
 		return;
 	}
 	if (DEBUGTRACE_IsInterruptExcluded(int_num)) {
@@ -898,6 +907,9 @@ void DEBUGTRACE_Init()
 		        g_config.cpu_backlog_regs.c_str());
 	}
 
+	// Agent RE: BP / WATCH / SNAPSHOT / INT ring (same master enable)
+	AgentRe_Init("re_snaps");
+
 	// Live on/off toggle (does not replace host pause suspend)
 	SDL_Scancode tkey = SDL_SCANCODE_UNKNOWN;
 	uint32_t tmods    = 0;
@@ -942,6 +954,7 @@ void DEBUGTRACE_Shutdown()
 	ScreenDump_Shutdown();
 	MemDump_Shutdown();
 	CpuBacklog_Shutdown();
+	AgentRe_Shutdown();
 }
 
 // Called by ExecLogger when the first EXEC is detected (auto_trace_on_exec mode)

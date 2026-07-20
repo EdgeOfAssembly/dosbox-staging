@@ -16,6 +16,7 @@
 #include "capture/capture.h"
 #include "debug_trace/game_trace.h"
 #include "debug_trace/cpu_backlog.h"
+#include "debug_trace/agent_re.h"
 
 #include <algorithm>
 #include <atomic>
@@ -406,6 +407,7 @@ enum class CmdKind {
 	CaptureShot, // Staging PNG capture (grouped/rendered/raw)
 	TraceToggle, // DEBUGTRACE_ToggleActive
 	Traceback,   // CpuBacklog_FormatTraceback
+	AgentCmd,    // AgentRe_Cmd / SNAPSHOT / DIFF
 };
 
 struct Command {
@@ -681,6 +683,49 @@ static void execute_on_main(Command& cmd)
 		cmd.reply = CpuBacklog_FormatTraceback(n);
 		break;
 	}
+
+	case CmdKind::AgentCmd: {
+		// arg is full agent command line (e.g. "BP foo 1234:5678")
+		const std::string& a = cmd.arg;
+		const auto sp        = a.find(' ');
+		const std::string head = (sp == std::string::npos)
+		                                 ? lower_copy(a)
+		                                 : lower_copy(a.substr(0, sp));
+		const std::string rest = (sp == std::string::npos) ? std::string()
+		                                                   : a.substr(sp + 1);
+		if (head == "snapshot") {
+			cmd.reply = AgentRe_Snapshot(rest);
+		} else if (head == "diff") {
+			auto toks = rest;
+			std::string ta;
+			std::string tb;
+			const auto p = rest.find(' ');
+			if (p == std::string::npos) {
+				cmd.reply = "ERR usage: DIFF <tagA> <tagB>\n";
+			} else {
+				ta = rest.substr(0, p);
+				tb = rest.substr(p + 1);
+				while (!tb.empty() && tb.front() == ' ') {
+					tb.erase(tb.begin());
+				}
+				cmd.reply = AgentRe_Diff(ta, tb);
+			}
+		} else if (head == "traceback" || head == "jsontraceback") {
+			int n = 0;
+			if (!rest.empty()) {
+				try {
+					n = std::stoi(rest);
+				} catch (...) {
+					n = 0;
+				}
+			}
+			// Text TRACEBACK; agent can parse. JSON optional later.
+			cmd.reply = CpuBacklog_FormatTraceback(n);
+		} else {
+			cmd.reply = AgentRe_Cmd(a);
+		}
+		break;
+	}
 	}
 }
 
@@ -871,14 +916,21 @@ static std::string handle_line(const std::string& raw)
 	           cmd_l == "cpubacklog") {
 		c.kind = CmdKind::Traceback;
 		c.arg  = rest; // optional count
+	} else if (cmd_l == "bp" || cmd_l == "bpint" || cmd_l == "watch" ||
+	           cmd_l == "bplist" || cmd_l == "list" || cmd_l == "bpclear" ||
+	           cmd_l == "clear" || cmd_l == "step" || cmd_l == "continue" ||
+	           cmd_l == "cont" || cmd_l == "go" || cmd_l == "intring" ||
+	           cmd_l == "snapshot" || cmd_l == "diff") {
+		// Agent RE — main thread for DS/regs/mem/snapshots
+		c.kind = CmdKind::AgentCmd;
+		c.arg  = line; // full original line
 	} else if (cmd_l == "help") {
-		return "OK commands: HELLO PING STATUS KEY <name> KEYDOWN KEYUP "
-		       "TYPE <text> TEXT B800 DUMPSCREEN DUMPMEM CAPTURE [grouped|rendered|raw] "
-		       "OVERLAY [on|off|toggle] HOSTPAUSE HOSTUNPAUSE TRACETOGGLE "
-		       "TRACEBACK [n] HELP QUIT\n"
-		       "Keys: US/emulator layout (keypress -e). No xdotool required.\n"
-		       "OVERLAY=host cell grid. CAPTURE=Staging PNGs.\n"
-		       "TRACEBACK=last n executed insns (hex+regs) for Capstone.\n";
+		return "OK commands: HELLO PING STATUS KEY KEYDOWN KEYUP TYPE TEXT B800 "
+		       "DUMPSCREEN DUMPMEM CAPTURE OVERLAY HOSTPAUSE HOSTUNPAUSE "
+		       "TRACETOGGLE TRACEBACK [n] "
+		       "BP name CS:IP | BPINT name INT [AH] | WATCH name phys:|ds: [pause|log] "
+		       "LIST CLEAR STEP CONTINUE INTRING [n] [json] "
+		       "SNAPSHOT tag | DIFF tagA tagB | HELP QUIT\n";
 	} else if (cmd_l == "quit" || cmd_l == "exit") {
 		return "OK BYE\n";
 	} else {
@@ -895,8 +947,8 @@ static std::string handle_line(const std::string& raw)
 		timeout_ms = static_cast<uint32_t>(
 		        2000 + (g_cfg.key_hold_ms + 5) *
 		                       std::max<size_t>(1, rest.size()));
-	} else if (c.kind == CmdKind::Traceback) {
-		timeout_ms = 5000;
+	} else if (c.kind == CmdKind::Traceback || c.kind == CmdKind::AgentCmd) {
+		timeout_ms = 8000;
 	}
 	queue_and_wait(c, timeout_ms);
 	return c.reply.empty() ? "ERR empty\n" : c.reply;

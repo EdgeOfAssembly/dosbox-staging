@@ -19,8 +19,8 @@ Build: **CMake + make only** (`cmake -DOPT_OPUS=OFF -B build && make -C build -j
 | `TEXT` / `B800` | Observe text VRAM |
 | `TRACEBACK [n]` | Last *n* executed insns + `NOW=` regs (Capstone on agent) |
 | `INTRING [n] [json]` | Last software INTs |
-| `BP name CS:IP` | Execute breakpoint |
-| `BPINT name INT [AH]` | INT breakpoint (optional AH) |
+| `BP name CS:IP` | Execute breakpoint (hex; `01AD:4B4F` or `0x1AD:0x4B4F`) |
+| `BPINT name INT [AH]` | INT breakpoint — use **`0x16`** for INT 16h (bare `16` is decimal → INT 10h) |
 | `WATCH name phys:HEX[+SZ]\|ds:OFF[+SZ] [pause\|log]` | Write watch |
 | `LIST` / `CLEAR` | Show / clear BP+WATCH |
 | `STEP` / `CONTINUE` | Single-step / resume (host unpause) |

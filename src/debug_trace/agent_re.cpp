@@ -148,13 +148,35 @@ bool parse_u16(const std::string& s, uint16_t& v)
 	}
 }
 
+bool parse_hex_u16(const std::string& s, uint16_t& v)
+{
+	// Always hex — CS:IP tokens are routinely written as 01AD:4B4F.
+	// Base-0 stoul treats leading 0 as octal and rejects 01ad after lower().
+	try {
+		size_t idx = 0;
+		std::string t = s;
+		if (t.size() >= 2 && t[0] == '0' && (t[1] == 'x' || t[1] == 'X')) {
+			t = t.substr(2);
+		}
+		unsigned long x = std::stoul(t, &idx, 16);
+		if (idx != t.size() || x > 0xFFFF) {
+			return false;
+		}
+		v = static_cast<uint16_t>(x);
+		return true;
+	} catch (...) {
+		return false;
+	}
+}
+
 bool parse_csip(const std::string& s, uint16_t& cs, uint16_t& ip)
 {
 	const auto pos = s.find(':');
 	if (pos == std::string::npos) {
 		return false;
 	}
-	return parse_u16(s.substr(0, pos), cs) && parse_u16(s.substr(pos + 1), ip);
+	return parse_hex_u16(s.substr(0, pos), cs) &&
+	       parse_hex_u16(s.substr(pos + 1), ip);
 }
 
 // phys:HEX or ds:OFF or ds:OFF+SIZE
@@ -488,6 +510,7 @@ void AgentRe_ClearAll()
 	g_watches.clear();
 	g_step_armed   = false;
 	g_step_pending = false;
+	g_last_trap.clear();
 	refresh_hot_flags_unlocked();
 }
 

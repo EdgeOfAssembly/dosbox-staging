@@ -528,6 +528,9 @@ void AgentRe_RequestContinue()
 	std::lock_guard<std::mutex> lock(g_mtx);
 	g_step_armed   = false;
 	g_step_pending = false;
+	// Drop sticky trap text so LIST reflects "no active trap" after resume.
+	// (Host is running again; a new BP/WATCH/STEP will set a fresh reason.)
+	g_last_trap.clear();
 	refresh_hot_flags_unlocked();
 	GFX_RequestHostUnpause();
 }

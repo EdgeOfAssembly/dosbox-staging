@@ -9,4 +9,5 @@ target_sources(libdosboxcommon PRIVATE
   opcode_dump.cpp
   screen_dump.cpp
   mem_dump.cpp
+  cpu_backlog.cpp
 )

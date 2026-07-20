@@ -61,6 +61,31 @@ event is logged to `game_trace.log`.
 | `deduplicate_instructions` | `false` | Suppress repeated identical instruction entries at the same CS:IP address when they appear in immediate succession (see `dedup_instruction_max_consecutive`). |
 | `dedup_instruction_max_consecutive` | `3` | Maximum number of consecutive identical CS:IP entries before deduplication kicks in. After this many identical entries in a row, further duplicates are suppressed until a different CS:IP is seen. |
 | `toggle_hotkey` | `ctrl+alt+d` | Live on/off for tracing while DOSBox runs (`none` to disable). **Does not override** `enabled=false`. |
+| `cpu_backlog` | `true` | Rolling ring of executed real-mode insns while tracing is active. Dump with socket `TRACEBACK`. |
+| `cpu_backlog_insns` | `512` | Ring capacity (instructions). |
+| `cpu_backlog_regs` | `minimal` | Per-entry regs: `none` / `minimal` (AX DX DS FLAGS) / `full`. Always prints full `NOW=` block on TRACEBACK. |
+
+### CPU TRACEBACK (control socket)
+
+While tracing is active the normal core pushes each instruction into a ring.
+Host pause freezes the ring (hook stops). Then:
+
+```text
+TRACEBACK
+TRACEBACK 128
+```
+
+Reply (multi-line, ends with `END`):
+
+```text
+OK TRACEBACK n=64 cap=512 regs=minimal
+NOW AX=... BX=... ... CS=... IP=... FLAGS=...
+000 CS=1A2B IP=3C10 BYTES=3D 50 00 AX=0041 DX=0000 DS=0E25 FLAGS=0246
+...
+END
+```
+
+Feed `BYTES` + CS:IP into Capstone (`CS_ARCH_X86`, `CS_MODE_16`) on the agent.
 
 ### Pause vs toggle (always respect config)
 

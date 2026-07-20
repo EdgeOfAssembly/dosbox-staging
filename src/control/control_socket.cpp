@@ -15,6 +15,7 @@
 #include "gui/common.h"
 #include "capture/capture.h"
 #include "debug_trace/game_trace.h"
+#include "debug_trace/cpu_backlog.h"
 
 #include <algorithm>
 #include <atomic>
@@ -404,6 +405,7 @@ enum class CmdKind {
 	DumpMem,    // trigger MemDump_Hotkey
 	CaptureShot, // Staging PNG capture (grouped/rendered/raw)
 	TraceToggle, // DEBUGTRACE_ToggleActive
+	Traceback,   // CpuBacklog_FormatTraceback
 };
 
 struct Command {
@@ -665,6 +667,20 @@ static void execute_on_main(Command& cmd)
 		            " user=" +
 		            (DEBUGTRACE_UserWantsActive() ? "on" : "off") + "\n";
 		break;
+
+	case CmdKind::Traceback: {
+		int n = 0;
+		if (!cmd.arg.empty()) {
+			try {
+				n = std::stoi(cmd.arg);
+			} catch (...) {
+				n = 0;
+			}
+		}
+		// Must run on main thread (reads live CPU regs for NOW= block).
+		cmd.reply = CpuBacklog_FormatTraceback(n);
+		break;
+	}
 	}
 }
 
@@ -851,12 +867,18 @@ static std::string handle_line(const std::string& raw)
 		c.arg  = rest;
 	} else if (cmd_l == "tracetoggle" || cmd_l == "debugtoggle") {
 		c.kind = CmdKind::TraceToggle;
+	} else if (cmd_l == "traceback" || cmd_l == "disasm" ||
+	           cmd_l == "cpubacklog") {
+		c.kind = CmdKind::Traceback;
+		c.arg  = rest; // optional count
 	} else if (cmd_l == "help") {
 		return "OK commands: HELLO PING STATUS KEY <name> KEYDOWN KEYUP "
 		       "TYPE <text> TEXT B800 DUMPSCREEN DUMPMEM CAPTURE [grouped|rendered|raw] "
-		       "OVERLAY [on|off|toggle] HOSTPAUSE HOSTUNPAUSE TRACETOGGLE HELP QUIT\n"
+		       "OVERLAY [on|off|toggle] HOSTPAUSE HOSTUNPAUSE TRACETOGGLE "
+		       "TRACEBACK [n] HELP QUIT\n"
 		       "Keys: US/emulator layout (keypress -e). No xdotool required.\n"
-		       "OVERLAY=host cell grid (shots yes, VRAM no). CAPTURE=Staging PNGs.\n";
+		       "OVERLAY=host cell grid. CAPTURE=Staging PNGs.\n"
+		       "TRACEBACK=last n executed insns (hex+regs) for Capstone.\n";
 	} else if (cmd_l == "quit" || cmd_l == "exit") {
 		return "OK BYE\n";
 	} else {
@@ -867,13 +889,15 @@ static std::string handle_line(const std::string& raw)
 		return "OK control_socket 1 (keypress emulator-mode / US layout)\n";
 	}
 
-	// TYPE can take a while (hold_ms * length); allow more time.
-	const uint32_t timeout_ms =
-	        (c.kind == CmdKind::TypeText)
-	                ? static_cast<uint32_t>(
-	                          2000 + (g_cfg.key_hold_ms + 5) *
-	                                         std::max<size_t>(1, rest.size()))
-	                : 2000;
+	// TYPE can take a while; TRACEBACK can be large.
+	uint32_t timeout_ms = 2000;
+	if (c.kind == CmdKind::TypeText) {
+		timeout_ms = static_cast<uint32_t>(
+		        2000 + (g_cfg.key_hold_ms + 5) *
+		                       std::max<size_t>(1, rest.size()));
+	} else if (c.kind == CmdKind::Traceback) {
+		timeout_ms = 5000;
+	}
 	queue_and_wait(c, timeout_ms);
 	return c.reply.empty() ? "ERR empty\n" : c.reply;
 }
@@ -884,6 +908,7 @@ static void client_session(const int fd)
 	std::string line;
 	while (g_running.load() && read_line(fd, line)) {
 		const std::string reply = handle_line(line);
+		// Ensure multi-line replies (TEXT/B800/TRACEBACK) end with newline
 		if (!send_all(fd, reply)) {
 			break;
 		}

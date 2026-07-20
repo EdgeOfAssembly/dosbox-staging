@@ -12,6 +12,7 @@
 #include "opcode_dump.h"
 #include "mem_dump.h"
 #include "screen_dump.h"
+#include "cpu_backlog.h"
 
 #include "config/setup.h"
 #include "gui/mapper.h"
@@ -74,6 +75,10 @@ struct TraceConfig {
 	std::string mem_dump_regions = ""; // empty → ICON defaults
 	// Live on/off (mapper); independent of host pause suspend
 	std::string toggle_hotkey = "ctrl+alt+d";
+	// Executed-instruction ring for TRACEBACK / Capstone
+	bool        cpu_backlog       = true;
+	int         cpu_backlog_insns = 512;
+	std::string cpu_backlog_regs  = "minimal"; // none|minimal|full
 };
 
 static TraceConfig g_config;
@@ -536,6 +541,19 @@ static void init_debugtrace_settings(const SectionProp& section)
 	if (g_config.toggle_hotkey.empty()) {
 		g_config.toggle_hotkey = "ctrl+alt+d";
 	}
+
+	g_config.cpu_backlog       = section.GetBool("cpu_backlog");
+	g_config.cpu_backlog_insns  = section.GetInt("cpu_backlog_insns");
+	if (g_config.cpu_backlog_insns < 16) {
+		g_config.cpu_backlog_insns = 16;
+	}
+	if (g_config.cpu_backlog_insns > 65536) {
+		g_config.cpu_backlog_insns = 65536;
+	}
+	g_config.cpu_backlog_regs = section.GetString("cpu_backlog_regs");
+	if (g_config.cpu_backlog_regs.empty()) {
+		g_config.cpu_backlog_regs = "minimal";
+	}
 }
 
 static void notify_debugtrace_setting_updated([[maybe_unused]] const SectionProp& section,
@@ -754,6 +772,27 @@ void DEBUGTRACE_AddConfigSection(const ConfigPtr& conf)
 	        "'ctrl+alt+d' (default), 'f7', 'none' to disable.\n"
 	        "Host pause (Alt+Pause) always suspends tracing regardless of this;\n"
 	        "unpause resumes only if enabled=true and this toggle is still on.");
+
+	// --- CPU executed-instruction backlog (TRACEBACK over control socket) ---
+	pbool = section->AddBool("cpu_backlog", OnlyAtStart, true);
+	pbool->SetHelp(
+	        "Keep a rolling ring of recently executed real-mode instructions\n"
+	        "while tracing is active ('true' by default when debugtrace is enabled).\n"
+	        "Dump via control socket TRACEBACK. Independent of trace_instructions\n"
+	        "text log. Freezes while host-paused. Config enabled=false disables all.");
+
+	pint = section->AddInt("cpu_backlog_insns", OnlyAtStart, 512);
+	pint->SetMinMax(16, 65536);
+	pint->SetHelp(
+	        "Capacity of the CPU backlog ring in instructions (512 by default).");
+
+	pstring = section->AddString("cpu_backlog_regs", OnlyAtStart, "minimal");
+	pstring->SetHelp(
+	        "Per-instruction register snapshot in the backlog:\n"
+	        "  none     — CS:IP + bytes only\n"
+	        "  minimal  — + AX DX DS FLAGS (default)\n"
+	        "  full     — all GP regs + DS ES SS FLAGS\n"
+	        "TRACEBACK always also prints a full NOW= register block.");
 }
 
 // ---------------------------------------------------------------------------
@@ -848,6 +887,17 @@ void DEBUGTRACE_Init()
 		MemDump_Init(mdc);
 	}
 
+	if (g_config.cpu_backlog) {
+		CpuBacklogConfig bc;
+		bc.enabled   = true;
+		bc.max_insns = g_config.cpu_backlog_insns;
+		bc.regs      = CpuBacklog_ParseRegsMode(g_config.cpu_backlog_regs);
+		CpuBacklog_Init(bc);
+		LOG_MSG("DEBUGTRACE: cpu_backlog on (insns=%d regs=%s)",
+		        bc.max_insns,
+		        g_config.cpu_backlog_regs.c_str());
+	}
+
 	// Live on/off toggle (does not replace host pause suspend)
 	SDL_Scancode tkey = SDL_SCANCODE_UNKNOWN;
 	uint32_t tmods    = 0;
@@ -891,6 +941,7 @@ void DEBUGTRACE_Shutdown()
 	OpcodeDump_Shutdown();
 	ScreenDump_Shutdown();
 	MemDump_Shutdown();
+	CpuBacklog_Shutdown();
 }
 
 // Called by ExecLogger when the first EXEC is detected (auto_trace_on_exec mode)

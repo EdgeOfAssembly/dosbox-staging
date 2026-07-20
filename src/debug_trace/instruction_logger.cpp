@@ -9,6 +9,7 @@
 // the information they need to correlate with a proper disassembler.
 
 #include "instruction_logger.h"
+#include "cpu_backlog.h"
 #include "game_trace.h"
 #include "insn_length.h"
 #include "opcode_dump.h"
@@ -47,6 +48,11 @@ void InstructionLogger_Log(const uint16_t cs_val, const uint16_t ip_val)
 	if (g_trace_skip_first_instruction) {
 		g_trace_skip_first_instruction = false;
 		return;
+	}
+
+	// Rolling executed-insn ring (independent of text log / sample rate).
+	if (CpuBacklog_IsEnabled()) {
+		CpuBacklog_Push(cs_val, ip_val);
 	}
 
 	// Compute physical address once — used by both the binary dump and text log.

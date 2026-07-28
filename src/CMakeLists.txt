@@ -22,9 +22,7 @@ add_subdirectory(utils)
 add_subdirectory(webserver)
 add_subdirectory(control)
 
-if (WIN32)
-  add_subdirectory(platform/windows)
-endif()
+# platform/windows excluded — Linux+X11 fork only
 
 if (OPT_TESTS)
   target_sources(dosbox_tests PRIVATE dosbox.cpp)

@@ -15,29 +15,14 @@
 static const char *manymouse_copyright =
     "ManyMouse " MANYMOUSE_VERSION " copyright (c) 2005-2012 Ryan C. Gordon.";
 
-extern const ManyMouseDriver *ManyMouseDriver_windows;
+/* Linux+X11-only fork: only build/link evdev + XInput2 backends. */
 extern const ManyMouseDriver *ManyMouseDriver_evdev;
-extern const ManyMouseDriver *ManyMouseDriver_hidmanager;
-extern const ManyMouseDriver *ManyMouseDriver_hidutilities;
 extern const ManyMouseDriver *ManyMouseDriver_xinput2;
 
-/*
- * These have to be in the favored order...obviously it doesn't matter if the
- *  Linux driver comes before or after the Windows one, since one won't
- *  exist on a given platform, but things like Mac OS X's hidmanager (which
- *  only works on OS X 10.5 and later) should come before Mac OS X's
- *  hidutilities (which works on older systems, but may stop working in 10.6
- *  and later). In the Mac OS X case, you want to try the newer tech, and if
- *  it's not available (on 10.4 or earlier), fall back to trying the legacy
- *  code.
- */
 static const ManyMouseDriver **mice_drivers[] =
 {
     &ManyMouseDriver_evdev,
     &ManyMouseDriver_xinput2,
-    &ManyMouseDriver_windows,
-    &ManyMouseDriver_hidmanager,
-    &ManyMouseDriver_hidutilities,
 };
 
 

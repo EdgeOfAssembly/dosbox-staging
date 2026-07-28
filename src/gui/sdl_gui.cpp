@@ -1724,20 +1724,15 @@ static void configure_pause_and_mute_when_inactive()
 
 static void set_sdl_hints()
 {
+	// Product cut: Linux + X11 only. Force X11 before SDL video init.
+	// Overwrite so a session SDL_VIDEODRIVER=wayland cannot select Wayland.
+	set_env_var("SDL_VIDEODRIVER", "x11", Env::Overwrite);
+
 #if (SDL_VERSION_ATLEAST(3, 0, 0))
 	SDL_SetHint(SDL_HINT_APP_ID, DOSBOX_APP_ID);
 #else
-#if !defined(WIN32) && !defined(MACOSX)
-	constexpr int Overwrite = 0;
-
-	set_env_var("SDL_VIDEO_X11_WMCLASS", DOSBOX_APP_ID, Overwrite);
-	set_env_var("SDL_VIDEO_WAYLAND_WMCLASS", DOSBOX_APP_ID, Overwrite);
-#endif
-#endif
-
-#if defined(WIN32)
-	SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
-	SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
+	// WMCLASS for window managers; X11 only (do not set WAYLAND_WMCLASS).
+	set_env_var("SDL_VIDEO_X11_WMCLASS", DOSBOX_APP_ID, Env::NoOverwrite);
 #endif
 
 	// Seamless mouse integration feels more 'seamless' if mouse
@@ -1859,6 +1854,14 @@ void GFX_InitSdl()
 	// Initialise SDL (timer is needed for title bar animations)
 	if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_TIMER) < 0) {
 		E_Exit("SDL: Failed to init SDL video and timer: %s", SDL_GetError());
+	}
+
+	// Product cut: refuse non-X11 video drivers (Wayland, kmsdrm, dummy, …).
+	const char* video_driver = SDL_GetCurrentVideoDriver();
+	if (video_driver == nullptr || std::strcmp(video_driver, "x11") != 0) {
+		E_Exit("SDL: Product requires X11 video driver, got '%s' "
+		       "(unset SDL_VIDEODRIVER overrides and ensure libX11 SDL is installed)",
+		       video_driver ? video_driver : "(null)");
 	}
 
 	if (is_using_kmsdrm_driver() && !check_kmsdrm_setting()) {

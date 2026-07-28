@@ -1,12 +1,10 @@
 
 if(C_MANYMOUSE)
 
+  # Linux+X11 only: evdev + XInput2 (no macOS/Windows backends)
   add_library(libmanymouse STATIC
     linux_evdev.c
-    macosx_hidmanager.c
-    macosx_hidutilities.c
     manymouse.c
-    windows_wminput.c
     x11_xinput2.c
   )
 

@@ -10,6 +10,17 @@ project(dosbox-staging
   VERSION 0.83.0
 )
 
+# This fork is a Linux + X11 product only (no Windows, macOS, or Wayland product).
+if (WIN32)
+  message(FATAL_ERROR "dosbox-staging (this fork): Windows is not supported. Linux+X11 only.")
+endif()
+if (APPLE)
+  message(FATAL_ERROR "dosbox-staging (this fork): macOS is not supported. Linux+X11 only.")
+endif()
+if (NOT LINUX)
+  message(FATAL_ERROR "dosbox-staging (this fork): only Linux is supported (got ${CMAKE_SYSTEM_NAME}).")
+endif()
+
 set(DOSBOX_VERSION ${PROJECT_VERSION}-alpha)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -143,19 +154,11 @@ include(CheckStructHasMember)
 include(CheckSymbolExists)
 include(GNUInstallDirs)
 
-if (WIN32)
-  set(DOSBOX_PLATFORM_WINDOWS ON)
-
-elseif (APPLE)
-  set(DOSBOX_PLATFORM_MACOS ON)
-  set(MACOSX ON)
-
-elseif (LINUX)
-  set(DOSBOX_PLATFORM_LINUX ON)
-
-else()
-  message(FATAL_ERROR "Unknown system ${CMAKE_SYSTEM_NAME}")
-endif()
+# Platform flags (Linux-only product; hard-fail above rejects other hosts)
+set(DOSBOX_PLATFORM_LINUX ON)
+set(DOSBOX_PLATFORM_WINDOWS OFF)
+set(DOSBOX_PLATFORM_MACOS OFF)
+set(MACOSX OFF)
 
 # Sanitizers
 option(OPT_SANITIZER        "Enable general sanitizer checks")

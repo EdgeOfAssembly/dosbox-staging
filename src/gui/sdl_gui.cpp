@@ -1731,7 +1731,7 @@ static void set_sdl_hints()
 #if (SDL_VERSION_ATLEAST(3, 0, 0))
 	SDL_SetHint(SDL_HINT_APP_ID, DOSBOX_APP_ID);
 #else
-	// WMCLASS for window managers; X11 only (do not set WAYLAND_WMCLASS).
+	// WMCLASS for window managers (X11 only; no Wayland class env).
 	set_env_var("SDL_VIDEO_X11_WMCLASS", DOSBOX_APP_ID, Env::NoOverwrite);
 #endif
 

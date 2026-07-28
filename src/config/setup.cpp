@@ -250,24 +250,39 @@ bool Property::ValidateValue(const Value& new_value)
 	}
 }
 
-static std::string create_setting_help_msg_name(const std::string& propname)
+// Help MSG keys must be unique across the whole process. Multiple sections
+// share short property names (e.g. "enabled" in [debugtrace], [controlsocket],
+// [debug_overlay]). Qualify with the section so MSG_Add does not warn and
+// each setting keeps its own help text.
+static std::string create_setting_help_msg_name(const Property& prop)
 {
-	std::string result = "CONFIG_" + propname;
+	std::string result = "CONFIG_";
+	if (!prop.help_section.empty()) {
+		result += prop.help_section;
+		result += '_';
+	}
+	result += prop.propname;
 	upcase(result);
 	return result;
 }
 
 void Property::SetHelp(const std::string& help_text)
 {
-	MSG_Add(create_setting_help_msg_name(propname), help_text);
+	MSG_Add(create_setting_help_msg_name(*this), help_text);
 }
 
-static std::string create_config_item_name(const std::string& propname,
+static std::string create_config_item_name(const Property& prop,
                                            const std::string& item)
 {
-	std::string result = "CONFIGITEM_" + propname;
+	std::string result = "CONFIGITEM_";
+	if (!prop.help_section.empty()) {
+		result += prop.help_section;
+		result += '_';
+	}
+	result += prop.propname;
 	if (!item.empty()) {
-		result += '_' + item;
+		result += '_';
+		result += item;
 	}
 	upcase(result);
 	return result;
@@ -275,20 +290,20 @@ static std::string create_config_item_name(const std::string& propname,
 
 void Property::SetOptionHelp(const std::string& option, const std::string& help_text)
 {
-	MSG_Add(create_config_item_name(propname, option), help_text);
+	MSG_Add(create_config_item_name(*this, option), help_text);
 }
 
 void Property::SetOptionHelp(const std::string& help_text)
 {
-	MSG_Add(create_config_item_name(propname, {}), help_text);
+	MSG_Add(create_config_item_name(*this, {}), help_text);
 }
 
 std::string Property::GetHelp() const
 {
 	std::string result = {};
-	if (MSG_Exists(create_setting_help_msg_name(propname))) {
+	if (MSG_Exists(create_setting_help_msg_name(*this))) {
 
-		auto help_text = MSG_Get(create_setting_help_msg_name(propname));
+		auto help_text = MSG_Get(create_setting_help_msg_name(*this));
 
 		// Fill in the default value if the help text contains '%s'.
 		if (help_text.find("%s") != std::string::npos) {
@@ -299,9 +314,9 @@ std::string Property::GetHelp() const
 	}
 
 	const auto configitem_has_message = [this](const auto& val) {
-		return MSG_Exists(create_config_item_name(propname, val)) ||
+		return MSG_Exists(create_config_item_name(*this, val)) ||
 		       (iequals(val, propname) &&
-		        MSG_Exists(create_config_item_name(propname, {})));
+		        MSG_Exists(create_config_item_name(*this, {})));
 	};
 	if (std::any_of(enabled_options.begin(),
 	                enabled_options.end(),
@@ -311,12 +326,12 @@ std::string Property::GetHelp() const
 				result.append("\n");
 			}
 			if (iequals(val, propname) &&
-			    MSG_Exists(create_config_item_name(propname, {}))) {
+			    MSG_Exists(create_config_item_name(*this, {}))) {
 				result.append(MSG_Get(
-				        create_config_item_name(propname, {})));
+				        create_config_item_name(*this, {})));
 			} else {
 				result.append(MSG_Get(
-				        create_config_item_name(propname, val)));
+				        create_config_item_name(*this, val)));
 			}
 		}
 	}
@@ -334,10 +349,10 @@ std::string Property::GetHelp() const
 std::string Property::GetHelpRaw() const
 {
 	std::string result = {};
-	if (MSG_Exists(create_setting_help_msg_name(propname))) {
+	if (MSG_Exists(create_setting_help_msg_name(*this))) {
 
 		auto help_text = MSG_GetTranslatedRaw(
-		        create_setting_help_msg_name(propname));
+		        create_setting_help_msg_name(*this));
 
 		// Fill in the default value if the help text contains '%s'.
 		if (help_text.find("%s") != std::string::npos) {
@@ -348,9 +363,9 @@ std::string Property::GetHelpRaw() const
 	}
 
 	const auto configitem_has_message = [this](const auto& val) {
-		return MSG_Exists(create_config_item_name(propname, val)) ||
+		return MSG_Exists(create_config_item_name(*this, val)) ||
 		       (iequals(val, propname) &&
-		        MSG_Exists(create_config_item_name(propname, {})));
+		        MSG_Exists(create_config_item_name(*this, {})));
 	};
 	if (std::any_of(enabled_options.begin(),
 	                enabled_options.end(),
@@ -360,12 +375,12 @@ std::string Property::GetHelpRaw() const
 				result.append("\n");
 			}
 			if (iequals(val, propname) &&
-			    MSG_Exists(create_config_item_name(propname, {}))) {
+			    MSG_Exists(create_config_item_name(*this, {}))) {
 				result.append(MSG_GetTranslatedRaw(
-				        create_config_item_name(propname, {})));
+				        create_config_item_name(*this, {})));
 			} else {
 				result.append(MSG_GetTranslatedRaw(
-				        create_config_item_name(propname, val)));
+				        create_config_item_name(*this, val)));
 			}
 		}
 	}
@@ -846,6 +861,7 @@ PropInt* SectionProp::AddInt(const std::string& _propname,
                              Property::Changeable::Value when, int new_value)
 {
 	const auto prop = new PropInt(_propname, when, new_value);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -855,6 +871,7 @@ PropString* SectionProp::AddString(const std::string& _propname,
                                    const char* new_value)
 {
 	const auto prop = new PropString(_propname, when, new_value);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -863,6 +880,7 @@ PropPath* SectionProp::AddPath(const std::string& _propname,
                                Property::Changeable::Value when, const char* new_value)
 {
 	const auto prop = new PropPath(_propname, when, new_value);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -871,6 +889,7 @@ PropBool* SectionProp::AddBool(const std::string& _propname,
                                Property::Changeable::Value when, bool new_value)
 {
 	const auto prop = new PropBool(_propname, when, new_value);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -879,6 +898,7 @@ PropHex* SectionProp::AddHex(const std::string& _propname,
                              Property::Changeable::Value when, Hex new_value)
 {
 	const auto prop = new PropHex(_propname, when, new_value);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -888,6 +908,7 @@ PropMultiVal* SectionProp::AddMultiVal(const std::string& _propname,
                                        const std::string& sep)
 {
 	const auto prop = new PropMultiVal(_propname, when, sep);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -897,6 +918,7 @@ PropMultiValRemain* SectionProp::AddMultiValRemain(const std::string& _propname,
                                                    const std::string& sep)
 {
 	const auto prop = new PropMultiValRemain(_propname, when, sep);
+	prop->SetHelpSection(GetName());
 	properties.push_back(prop);
 	return prop;
 }
@@ -1087,8 +1109,7 @@ bool SectionProp::HandleInputLine(const std::string& line)
 
 			NOTIFY_DisplayWarning(Notification::Source::Console,
 			                      "CONFIG",
-			                      create_setting_help_msg_name(
-			                              setting_name));
+			                      create_setting_help_msg_name(*p));
 
 			if (!p->IsDeprecatedButAllowed()) {
 				return false;

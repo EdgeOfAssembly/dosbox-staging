@@ -124,9 +124,18 @@ public:
 
 	const std::string propname;
 
+	// Owning [section] name for unique help MSG keys (CONFIG_<SECTION>_<PROP>).
+	// Empty for properties not owned by a SectionProp (should be rare).
+	std::string help_section;
+
 	Property(const std::string& name, Changeable::Value when);
 
 	virtual ~Property() = default;
+
+	void SetHelpSection(const std::string& section_name)
+	{
+		help_section = section_name;
+	}
 
 	void SetValues(const std::vector<std::string>& values);
 	void SetEnabledOptions(const std::vector<std::string>& options);

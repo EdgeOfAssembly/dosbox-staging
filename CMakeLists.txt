@@ -463,6 +463,10 @@ set(LICENSE_FILES
 
 # Set the directory with resources to bundle
 set(RESOURCES_PATH "resources")
+# Subdirectory under the build tree (and install share/) for copied resources.
+# Must be set: if empty, install() would copy the entire build/ directory.
+set(RESOURCE_COPY_PATH "resources" CACHE STRING
+    "Resources copy target relative to the binary directory")
 
 # Generate asset copy commands and add them as a dependency
 include(cmake/add_copy_assets.cmake)

@@ -285,6 +285,64 @@ bool Config::ParseConfigFile(const std::string& type,
 		return !line.empty() && line[0] == '[';
 	};
 
+	// Global directives (not section properties):
+	//   include = path.conf
+	//   import  = path.conf   (alias)
+	//   include path.conf
+	//   @include path.conf
+	// Relative paths resolve against the directory of the file that
+	// contains the directive. Cycles are skipped via
+	// loaded_config_paths_canonical.
+	auto try_parse_include_path = [](const std::string& raw)
+	        -> std::optional<std::string> {
+		std::string s = raw;
+		trim(s);
+		if (s.empty()) {
+			return std::nullopt;
+		}
+
+		// @include path  /  @import path
+		if (s.size() > 1 && s[0] == '@') {
+			s = s.substr(1);
+			trim(s);
+		}
+
+		std::string key;
+		std::string path;
+		const auto eq = s.find('=');
+		if (eq != std::string::npos) {
+			key  = s.substr(0, eq);
+			path = s.substr(eq + 1);
+		} else {
+			// "include path" or "import path"
+			const auto sp = s.find_first_of(" \t");
+			if (sp == std::string::npos) {
+				return std::nullopt;
+			}
+			key  = s.substr(0, sp);
+			path = s.substr(sp + 1);
+		}
+		trim(key);
+		trim(path);
+		lowcase(key);
+
+		// Strip optional quotes around path
+		if (path.size() >= 2 &&
+		    ((path.front() == '"' && path.back() == '"') ||
+		     (path.front() == '\'' && path.back() == '\''))) {
+			path = path.substr(1, path.size() - 2);
+			trim(path);
+		}
+
+		if (path.empty()) {
+			return std::nullopt;
+		}
+		if (key != "include" && key != "import") {
+			return std::nullopt;
+		}
+		return path;
+	};
+
 	auto handle_autoexec_line = [&]() {
 		// Ignore all the empty lines until the meaningful [autoexec]
 		// content starts
@@ -317,6 +375,37 @@ bool Config::ParseConfigFile(const std::string& type,
 
 		// Strip leading/trailing whitespace, skip unnecessary lines
 		if (is_empty_line(line) || is_comment(line)) {
+			continue;
+		}
+
+		// include / import (global, may appear before or between sections)
+		if (const auto inc = try_parse_include_path(line)) {
+			std_fs::path inc_path = *inc;
+			if (inc_path.is_relative()) {
+				if (!current_config_dir.empty()) {
+					inc_path = current_config_dir / inc_path;
+				}
+			}
+			// Expand leading ~/
+			const auto inc_str = inc_path.string();
+			if (inc_str.size() >= 2 && inc_str[0] == '~' &&
+			    (inc_str[1] == '/' || inc_str[1] == '\\')) {
+				const char* home = getenv("HOME");
+				if (home && home[0]) {
+					inc_path = std_fs::path(home) / inc_str.substr(2);
+				}
+			}
+
+			const auto saved_config_dir = current_config_dir;
+			const auto nested_type = type + "+include";
+			if (!ParseConfigFile(nested_type, inc_path.string())) {
+				LOG_WARNING(
+				        "CONFIG: Failed to include '%s' from '%s'",
+				        inc_path.string().c_str(),
+				        config_file_name.c_str());
+			}
+			// Nested ParseConfigFile clears current_config_dir
+			current_config_dir = saved_config_dir;
 			continue;
 		}
 

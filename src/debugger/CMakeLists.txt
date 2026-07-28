@@ -1,3 +1,6 @@
+# Linux+X11 product: debugger_win32.cpp is intentionally not listed
+# (WIN32_Console / AllocConsole — host Windows only).
+
 set(DEBUGGER_SRC
   debugger.cpp
   debugger_disasm.cpp

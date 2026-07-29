@@ -9,6 +9,19 @@ It is a (mostly) drop-in replacement for older DOSBox versions—your existing c
 
 For a detailed description of the project's scope please refer to the [About](https://www.dosbox-staging.org/about/) page on our website.
 
+### This fork (EdgeOfAssembly)
+
+**Linux + X11 only** — Windows, macOS, and Wayland are not product targets.
+
+| Doc | Topic |
+|-----|--------|
+| [docs/LINUX_X11_ONLY.md](docs/LINUX_X11_ONLY.md) | Product cut, CMake gates, structural test |
+| [docs/LEAN_XMUX.md](docs/LEAN_XMUX.md) | Lean cycles under Xmux, DW profile notes, black-screen recovery |
+| [docs/AGENT_XMUX_DW.md](docs/AGENT_XMUX_DW.md) | Short agent checklist (turn-based DW, shot after each key) |
+| [docs/CONFIG_INCLUDE.md](docs/CONFIG_INCLUDE.md) | Config `include` / import (if present) |
+
+Structural gate: `bash tests/test_linux_x11_only.sh`
+
 ## Donations
 
 If you enjoy using DOSBox Staging, please [consider a

@@ -147,3 +147,18 @@ See also `docs/CONFIG_INCLUDE.md` if present. Shared autoexec mounts
 - Prefer `xmux kill <session>` then exact-name kill of leftovers.
 - Do not claim green smoke from a pure-black screenshot (nonzero pixel fraction
   should be clearly non-zero; Purgatory frames were ~0.80).
+
+## Dragon Wars agent notes
+
+See host file `~/.local/share/dragon-wars/GAMEPLAY_NOTES.md` (bars, combat, no-rest economy, escape-Purgatory objective). Not shipped as game data — operator notes for this workstation.
+
+## Play vs profile
+
+| Mode | Setting | Doc |
+|------|---------|-----|
+| **Play / spectator** | `cpu_cycles=25000`, `core=dynamic` | Fun; use this for DW sessions |
+| **Profile / lean host** | `cpu_cycles=8000–12000`, `core=normal` | Measured Normal_Run share only |
+
+Gameplay keys, pipeline, combat: **`docs/DRAGON_WARS_GAMEPLAY.md`**.
+
+Avoid `xmux fill` if it **clips** the Dragon Wars UI; prefer matching window size + aspect.

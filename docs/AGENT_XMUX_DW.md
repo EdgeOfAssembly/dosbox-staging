@@ -1,25 +1,35 @@
-# Agent checklist: lean DW under Xmux
+# Agent checklist: Dragon Wars under Xmux
 
-Short runbook for agents (no subagent gameplay loops).
+## Pipeline (every action)
 
-## Before
+```text
+1. screenshot
+2. READ the screen (do not guess)
+3. decide
+4. ONE key — first letter of the chosen menu line
+5. ESC goes back / exits sheets
+```
 
-- [ ] `pgrep -x dosbox` / `xmuxd` / `xmux-xvfb` clean or intentionally reused
-- [ ] Binary: `build/dosbox` (Linux+X11 fork)
-- [ ] Lean conf + `--set cpu_cycles=8000`
+Character open (**1–7**) auto-pauses. Full notes: `docs/DRAGON_WARS_GAMEPLAY.md`.
+
+## Before play
+
+- [ ] Stack clean or intentional reuse
+- [ ] Binary: `build/dosbox` (Linux+X11)
+- [ ] Play conf: **25000 + dynamic**, window 1024×768, `aspect=true`, **no fill** if it clips
+- [ ] Optional: desktop monitor capture + ORDERS.md (obey if running)
 
 ## Run
 
 1. `xmux start <name> --geometry 1024x768`
 2. Print: `SPECTATOR: xmux attach <name> --no-reconnect`
-3. `xmux run <name> -- build/dosbox -conf lean.conf --set cpu_cycles=8000 …`
-4. `xmux fill <name> dosbox`
-5. Prove cycles: `xmux windows` shows `8000 cycles/ms`
-6. Drive turn-based with **screenshot after every key**
-7. Stop: `xmux kill <name>`; kill leftovers by exact process name
+3. Attach (optional auto-attach on `:0`), then `xmux run … dosbox`
+4. Boot: `DRAGON` → Esc/Space → **b** → Esc → Purgatory
+5. Play with pipeline above; **S**ave when progress is good
+6. Stop: `xmux kill <name>`; kill leftovers by exact name
 
-## After
+## Never
 
-- [ ] Notes: keys pressed, map probe result (Tab / m), any combat
-- [ ] Perf note if profiled: event name, Normal_Run %, cycles proof
-- [ ] No black-frame “green” claims
+- **Q** outside “Quickly fight”
+- Key spam / multi-key loops without reading
+- Black-frame “green” claims

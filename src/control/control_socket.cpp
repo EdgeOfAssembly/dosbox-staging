@@ -9,6 +9,7 @@
 #include "config/setup.h"
 #include "hardware/input/keyboard.h"
 #include "hardware/memory.h"
+#include "ints/bios.h"
 #include "debug_trace/screen_dump.h"
 #include "debug_trace/mem_dump.h"
 #include "gui/debug_overlay.h"
@@ -249,6 +250,91 @@ static bool name_to_kbd(const std::string& name, KBD_KEYS& key, bool& shift)
 	return false;
 }
 
+// INT 16h AX word (scan<<8 | ascii) for BIOS keyboard buffer stuffing.
+// AGI and other INT16 waiters never see 8042 scancodes if the emu thread
+// is blocked between make and break.
+static uint16_t kbd_to_int16(const KBD_KEYS k, const bool shift)
+{
+	switch (k) {
+	case KBD_esc: return 0x011B;
+	case KBD_1: return shift ? 0x0221 : 0x0231;
+	case KBD_2: return shift ? 0x0340 : 0x0332;
+	case KBD_3: return shift ? 0x0423 : 0x0433;
+	case KBD_4: return shift ? 0x0524 : 0x0534;
+	case KBD_5: return shift ? 0x0625 : 0x0635;
+	case KBD_6: return shift ? 0x075E : 0x0736;
+	case KBD_7: return shift ? 0x0826 : 0x0837;
+	case KBD_8: return shift ? 0x092A : 0x0938;
+	case KBD_9: return shift ? 0x0A28 : 0x0A39;
+	case KBD_0: return shift ? 0x0B29 : 0x0B30;
+	case KBD_minus: return shift ? 0x0C5F : 0x0C2D;
+	case KBD_equals: return shift ? 0x0D2B : 0x0D3D;
+	case KBD_backspace: return 0x0E08;
+	case KBD_tab: return shift ? 0x0F00 : 0x0F09;
+	case KBD_q: return shift ? 0x1051 : 0x1071;
+	case KBD_w: return shift ? 0x1157 : 0x1177;
+	case KBD_e: return shift ? 0x1245 : 0x1265;
+	case KBD_r: return shift ? 0x1352 : 0x1372;
+	case KBD_t: return shift ? 0x1454 : 0x1474;
+	case KBD_y: return shift ? 0x1559 : 0x1579;
+	case KBD_u: return shift ? 0x1655 : 0x1675;
+	case KBD_i: return shift ? 0x1749 : 0x1769;
+	case KBD_o: return shift ? 0x184F : 0x186F;
+	case KBD_p: return shift ? 0x1950 : 0x1970;
+	case KBD_leftbracket: return shift ? 0x1A7B : 0x1A5B;
+	case KBD_rightbracket: return shift ? 0x1B7D : 0x1B5D;
+	case KBD_enter:
+	case KBD_kpenter: return 0x1C0D;
+	case KBD_a: return shift ? 0x1E41 : 0x1E61;
+	case KBD_s: return shift ? 0x1F53 : 0x1F73;
+	case KBD_d: return shift ? 0x2044 : 0x2064;
+	case KBD_f: return shift ? 0x2146 : 0x2166;
+	case KBD_g: return shift ? 0x2247 : 0x2267;
+	case KBD_h: return shift ? 0x2348 : 0x2368;
+	case KBD_j: return shift ? 0x244A : 0x246A;
+	case KBD_k: return shift ? 0x254B : 0x256B;
+	case KBD_l: return shift ? 0x264C : 0x266C;
+	case KBD_semicolon: return shift ? 0x273A : 0x273B;
+	case KBD_quote: return shift ? 0x2822 : 0x2827;
+	case KBD_grave: return shift ? 0x297E : 0x2960;
+	case KBD_backslash: return shift ? 0x2B7C : 0x2B5C;
+	case KBD_z: return shift ? 0x2C5A : 0x2C7A;
+	case KBD_x: return shift ? 0x2D58 : 0x2D78;
+	case KBD_c: return shift ? 0x2E43 : 0x2E63;
+	case KBD_v: return shift ? 0x2F56 : 0x2F76;
+	case KBD_b: return shift ? 0x3042 : 0x3062;
+	case KBD_n: return shift ? 0x314E : 0x316E;
+	case KBD_m: return shift ? 0x324D : 0x326D;
+	case KBD_comma: return shift ? 0x333C : 0x332C;
+	case KBD_period: return shift ? 0x343E : 0x342E;
+	case KBD_slash: return shift ? 0x353F : 0x352F;
+	case KBD_space: return 0x3920;
+	case KBD_f1: return 0x3B00;
+	case KBD_f2: return 0x3C00;
+	case KBD_f3: return 0x3D00;
+	case KBD_f4: return 0x3E00;
+	case KBD_f5: return 0x3F00;
+	case KBD_f6: return 0x4000;
+	case KBD_f7: return 0x4100;
+	case KBD_f8: return 0x4200;
+	case KBD_f9: return 0x4300;
+	case KBD_f10: return 0x4400;
+	case KBD_home: return 0x4700;
+	case KBD_up: return 0x4800;
+	case KBD_pageup: return 0x4900;
+	case KBD_left: return 0x4B00;
+	case KBD_right: return 0x4D00;
+	case KBD_end: return 0x4F00;
+	case KBD_down: return 0x5000;
+	case KBD_pagedown: return 0x5100;
+	case KBD_insert: return 0x5200;
+	case KBD_delete: return 0x5300;
+	case KBD_f11: return 0x8500;
+	case KBD_f12: return 0x8600;
+	default: return 0;
+	}
+}
+
 static std::string lower_copy(std::string s)
 {
 	for (auto& c : s) {
@@ -447,6 +533,7 @@ static void queue_and_wait(Command& cmd, const uint32_t timeout_ms = 2000)
 
 static void key_tap(const KBD_KEYS key, const bool with_shift, const int hold_ms)
 {
+	(void)hold_ms;
 	if (key == KBD_NONE) {
 		return;
 	}
@@ -454,14 +541,41 @@ static void key_tap(const KBD_KEYS key, const bool with_shift, const int hold_ms
 		KEYBOARD_AddKey(KBD_leftshift, true);
 	}
 	KEYBOARD_AddKey(key, true);
-	// busy wait is bad; short PIC-friendly delay via sleep is ok on main thread
-	if (hold_ms > 0) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(hold_ms));
-	}
+	// Do not sleep on the emulation thread: that freezes the CPU so the
+	// 8042 never drains the make code before the break overwrites it.
 	KEYBOARD_AddKey(key, false);
 	if (with_shift) {
 		KEYBOARD_AddKey(KBD_leftshift, false);
 	}
+}
+
+// KEY/TYPE: down on emu thread, wait on the socket thread (CPU runs), then up.
+static std::string tap_key_live(const KBD_KEYS key, const bool shift, int hold_ms)
+{
+	if (key == KBD_NONE) {
+		return "ERR unknown key\n";
+	}
+	if (hold_ms < 1) {
+		hold_ms = g_cfg.key_hold_ms;
+	}
+	Command down{};
+	down.kind  = CmdKind::KeyDown;
+	down.key   = key;
+	down.shift = shift;
+	queue_and_wait(down);
+	if (down.reply.rfind("ERR", 0) == 0) {
+		return down.reply.empty() ? "ERR keydown\n" : down.reply;
+	}
+	std::this_thread::sleep_for(std::chrono::milliseconds(hold_ms));
+	Command up{};
+	up.kind  = CmdKind::KeyUp;
+	up.key   = key;
+	up.shift = shift;
+	queue_and_wait(up);
+	if (up.reply.rfind("ERR", 0) == 0) {
+		return up.reply.empty() ? "ERR keyup\n" : up.reply;
+	}
+	return "OK\n";
 }
 
 // CP437 printable-ish → ASCII for agent TEXT view
@@ -550,28 +664,27 @@ static void execute_on_main(Command& cmd)
 		break;
 
 	case CmdKind::TypeText: {
+		/* INT 16 path only — do not also inject 8042 scancodes (that
+		 * duplicated glyphs and inserted spaces, e.g. "21" → "2 1"). */
 		for (const char c : cmd.arg) {
-			KBD_KEYS k = KBD_NONE;
-			bool sh    = false;
-			std::string one(1, c);
-			// keep case for shift
-			if (!name_to_kbd(std::string(1, c), k, sh)) {
-				// try lower for letters already handled
-				if (!name_to_kbd(lower_copy(one), k, sh) && c != '\r' &&
-				    c != '\n') {
+			uint16_t bios = 0;
+			if (c == '\r' || c == '\n') {
+				bios = 0x1C0D;
+			} else if (c == ' ') {
+				bios = 0x3920;
+			} else {
+				KBD_KEYS k = KBD_NONE;
+				bool sh    = false;
+				if (c >= 'A' && c <= 'Z') {
+					k  = letter_to_kbd(c);
+					sh = true;
+				} else if (!name_to_kbd(std::string(1, c), k, sh)) {
 					continue;
 				}
+				bios = kbd_to_int16(k, sh);
 			}
-			// re-parse with original case for A-Z
-			if (c >= 'A' && c <= 'Z') {
-				k  = letter_to_kbd(c);
-				sh = true;
-			} else if (c >= 'a' && c <= 'z') {
-				k  = letter_to_kbd(c);
-				sh = false;
-			}
-			if (k != KBD_NONE) {
-				key_tap(k, sh, hold);
+			if (bios != 0) {
+				BIOS_AddKeyToBuffer(bios);
 			}
 		}
 		cmd.reply = "OK\n";
@@ -811,21 +924,27 @@ static std::string handle_line(const std::string& raw)
 			// answer immediately without queue? still use queue for consistency
 		}
 	} else if (cmd_l == "key" || cmd_l == "tap") {
-		c.kind = CmdKind::KeyTap;
-		// rest may be multi-token: "leftshift" or "P" or "kp2"
-		// support KEY name OR KEY name1+name2 for combos later
-		std::string kname = lower_copy(rest);
-		// preserve shift for single capital letter: if rest is "P" keep shift
+		// KEY name [down_ms] — wait on the socket thread so the CPU runs.
+		std::string ktok = rest;
+		int hold         = g_cfg.key_hold_ms;
+		const auto sp2   = rest.find(' ');
+		if (sp2 != std::string::npos) {
+			ktok = rest.substr(0, sp2);
+			try {
+				hold = std::stoi(rest.substr(sp2 + 1));
+			} catch (...) {
+				hold = g_cfg.key_hold_ms;
+			}
+		}
 		bool shift = false;
 		KBD_KEYS k = KBD_NONE;
-		if (rest.size() == 1 && rest[0] >= 'A' && rest[0] <= 'Z') {
-			k     = letter_to_kbd(rest[0]);
+		if (ktok.size() == 1 && ktok[0] >= 'A' && ktok[0] <= 'Z') {
+			k     = letter_to_kbd(ktok[0]);
 			shift = true;
-		} else if (!name_to_kbd(kname, k, shift)) {
-			return "ERR unknown key '" + rest + "'\n";
+		} else if (!name_to_kbd(lower_copy(ktok), k, shift)) {
+			return "ERR unknown key '" + ktok + "'\n";
 		}
-		c.key   = k;
-		c.shift = shift;
+		return tap_key_live(k, shift, hold);
 	} else if (cmd_l == "keydown" || cmd_l == "down") {
 		c.kind = CmdKind::KeyDown;
 		bool shift = false;

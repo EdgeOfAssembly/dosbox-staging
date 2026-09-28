@@ -41,7 +41,7 @@ Commands (case-insensitive keyword; replies end with `\n`, multi-line blocks end
 |---------|--------|
 | `HELLO` / `PING` | Banner / `OK PONG` |
 | `STATUS` | `OK pid=… sock=… pidfile=… hold_ms=…` |
-| `KEY <name>` / `TAP <name>` | Press+release (optional shift for `A`–`Z`) |
+| `KEY <name> [ms]` / `TAP <name>` | Press+release; wait is on the **socket** thread so the guest CPU runs. Also stuffs the BIOS INT16 buffer. |
 | `KEYDOWN <name>` / `KEYUP <name>` | Hold / release (movement, etc.) |
 | `TYPE <text>` | Type string as US keys |
 | `TEXT` | ASCII map of visible text VRAM (CP437 → simple glyphs) |
